@@ -1,0 +1,974 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpticFilm 7600i — experimental (unverified)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#1b1f24; --panel:#23282e; --panel2:#2a3038; --line:#353c45;
+  --ink:#e9e5dd; --ink2:#a8aeb6; --dim:#6f767f;
+  --amber:#f0a832; --amber2:#7a5416; --ir:#c98bff; --ok:#7fd39a; --bad:#ff7a6e;
+}
+:root:not([data-theme="light"]) { color-scheme: dark; }
+:root[data-theme="dark"]{ color-scheme: dark; }
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 "Instrument Sans",system-ui,sans-serif}
+body{min-height:100vh}
+header{display:flex;align-items:baseline;gap:18px;padding:18px 22px 10px;border-bottom:1px solid var(--line)}
+header h1{font-size:19px;font-weight:600;margin:0;letter-spacing:.01em}
+header .dev{color:var(--ink2);font-family:"JetBrains Mono",monospace;font-size:12px}
+header .dev b{color:var(--amber);font-weight:500}
+main{display:grid;grid-template-columns:380px 1fr;gap:0;min-height:calc(100vh - 56px)}
+@media (max-width:900px){main{grid-template-columns:1fr}}
+aside{border-right:1px solid var(--line);padding:16px 18px 40px;overflow:auto}
+@media (max-width:900px){aside{border-right:0;border-bottom:1px solid var(--line)}}
+section{margin:0 0 22px}
+section h2{font-size:13px;font-weight:600;color:var(--ink2);margin:0 0 8px;letter-spacing:.02em}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+label{color:var(--ink2);font-size:13px}
+select,input[type=number],input[type=text]{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;font-size:14px;min-width:0}
+input[type=number]{width:86px}
+input[type=checkbox]{accent-color:var(--amber)}
+button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:7px 12px;font:inherit;font-weight:500;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--ink2)}
+button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+button:disabled{opacity:.45;cursor:default}
+button.primary{background:var(--amber);color:#1a1207;border-color:var(--amber)}
+button.danger{border-color:var(--bad);color:var(--bad)}
+.stack{display:grid;gap:6px}
+.stack button{width:100%;text-align:left;display:flex;justify-content:space-between}
+.stack button span.state{color:var(--dim);font-family:"JetBrains Mono",monospace;font-size:12px}
+.stack button.done span.state{color:var(--ok)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;font-family:"JetBrains Mono",monospace;font-size:12px}
+.chips span{border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--dim)}
+.chips span.on{color:var(--amber);border-color:var(--amber2)}
+.stage{display:flex;flex-direction:column;min-height:0}
+.viewer{position:relative;flex:1;display:flex;align-items:center;justify-content:center;background:#0f1215;min-height:320px;padding:14px}
+.viewer canvas{max-width:100%;max-height:70vh;image-rendering:auto;background:#000;box-shadow:0 0 0 1px #2c323a}
+.viewer .crop{position:absolute;border:1.5px dashed var(--amber);pointer-events:none;box-shadow:0 0 0 9999px rgba(0,0,0,.35)}
+.viewer .hint{position:absolute;left:18px;bottom:12px;color:var(--dim);font-size:13px}
+.viewer .lamp{position:absolute;right:18px;top:12px;font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--dim)}
+.viewer .lamp.on{color:var(--amber)}.viewer .lamp.ir{color:var(--ir)}
+.progress{height:3px;background:var(--line)}
+.progress i{display:block;height:100%;width:0;background:var(--amber);transition:width .15s}
+.progress.ir i{background:var(--ir)}
+.log{font-family:"JetBrains Mono",monospace;font-size:12px;line-height:1.5;height:220px;overflow:auto;padding:10px 16px;border-top:1px solid var(--line);background:var(--panel)}
+.log .err{color:var(--bad)}.log .ok{color:var(--ok)}.log .io{color:var(--dim)}.log .ir{color:var(--ir)}
+.log .w{color:var(--amber)}
+.tabs{display:flex;gap:2px;border-top:1px solid var(--line)}
+.tabs button{border:0;border-radius:0;background:transparent;color:var(--dim);padding:8px 14px}
+.tabs button.active{color:var(--ink);box-shadow:inset 0 -2px 0 var(--amber)}
+.results{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;padding:12px 16px;border-top:1px solid var(--line)}
+.results figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.results canvas{width:100%;display:block;background:#000}
+.results figcaption{padding:6px 8px;font-size:12px;color:var(--ink2)}
+.small{font-size:12px;color:var(--dim)}
+details summary{cursor:pointer;color:var(--ink2);font-size:13px}
+kbd{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--amber)}
+</style>
+</head>
+<body>
+<header>
+  <h1>OpticFilm 7600i — experimental page</h1><a href="/" style="color:var(--amber);font-size:13px">back to roll scanner</a>
+  <div class="dev" id="devline">no scanner connected</div>
+</header>
+<main>
+<aside>
+  <section>
+    <h2>Scanner</h2>
+    <div class="row">
+      <button class="primary" id="bConnect">Connect scanner</button>
+      <button id="bFake">Dry run (no hardware)</button>
+    </div>
+    <div class="row"><label>Variant</label>
+      <select id="variant">
+        <option value="auto" selected>auto from bcdDevice</option>
+        <option value="v1">v1 — 4.00 (7500i tables)</option>
+        <option value="v2">v2 — 6.05 (8200i tables)</option>
+      </select>
+    </div>
+    <p class="small" style="color:var(--amber)">Unverified SANE-derived research page. Use the roll scanner page for capture-matched scans. Do not open both pages at once.</p>
+    <p class="small" id="variantNote">v1 and v2 differ in GPIO init (0x6B, 0x6D) and IR mask (0x07 vs 0x04).</p>
+    <div class="stack">
+      <button id="bBoot" disabled><span>Boot ASIC, AFE and GPIO</span><span class="state">1</span></button>
+      <button id="bHome" disabled><span>Home the carriage</span><span class="state">2</span></button>
+      <button id="bCal" disabled><span>Calibrate (dark + white)</span><span class="state">3</span></button>
+      <button id="bPre" disabled><span>Prescan (captured 1440 × 2880 dpi)</span><span class="state">4</span></button>
+      <button id="bScan" disabled><span>Scan frame</span><span class="state">5</span></button>
+    </div>
+    <div class="row"><button class="danger" id="bStop" disabled>Stop and park</button><button id="bLamp" disabled>Lamp on/off</button></div>
+    <div class="chips" id="status41"></div>
+  </section>
+
+  <section>
+    <h2>Frame</h2>
+    <div class="row"><label>Resolution</label>
+      <select id="dpi"><option>900</option><option>1800</option><option selected>3600</option><option>7200</option></select>
+      <label>Film</label>
+      <select id="film"><option value="pos">positive</option><option value="neg" selected>negative</option><option value="koda">Kodachrome</option></select>
+    </div>
+    <div class="row"><label>Crop (mm, x y w h)</label>
+      <input type="number" id="cx" value="0" step="0.1" min="0" max="36">
+      <input type="number" id="cy" value="0" step="0.1" min="0" max="24">
+      <input type="number" id="cw" value="36" step="0.1" min="1" max="36">
+      <input type="number" id="ch" value="24" step="0.1" min="1" max="24">
+    </div>
+    <p class="small"><span id="frameNote">Capture mode uses each recording’s fixed frame. Full scan samples at 3600 × 7200 dpi. Disable capture mode for custom cropping and resolution.</span></p>
+  </section>
+
+  <section>
+    <h2>Passes</h2>
+    <div class="row"><label><input type="checkbox" id="doIR"> infrared pass (4th plane)</label></div>
+    <div class="row"><label>Multi-exposure</label>
+      <select id="mexp"><option value="1">off</option><option value="2">×2</option><option value="3">×3</option><option value="4">×4</option></select>
+      <label>Multi-sampling</label>
+      <select id="msamp"><option>1</option><option>2</option><option>4</option><option>8</option><option>16</option></select>
+    </div>
+    <div class="row"><label><input type="checkbox" id="applyCal" checked> apply dark/white calibration</label></div>
+    <div class="row"><label><input type="checkbox" id="autoAlign" checked> measure and correct pass registration</label></div>
+    <div class="row"><label><input type="checkbox" id="vendorProfile" checked> match supplied captures (v1): fixed frame and recorded calibration</label></div>
+    <div class="row"><label><input type="checkbox" id="vAvg" checked> average 2× vertical oversampling to square pixels</label></div>
+    <div class="row"><label><input type="checkbox" id="motorOff"> motor off — stationary sensor test</label></div>
+  </section>
+
+  <section>
+    <h2>Analog front end</h2>
+    <div class="row"><label>Offset R G B <span class="small">(AFE 05–07)</span></label>
+      <input type="number" id="o1" value="30" min="0" max="511"><input type="number" id="o2" value="48" min="0" max="511"><input type="number" id="o3" value="24" min="0" max="511">
+    </div>
+    <div class="row"><label>Gain R G B <span class="small">(AFE 02–04)</span></label>
+      <input type="number" id="g1" value="35" min="0" max="255"><input type="number" id="g2" value="27" min="0" max="255"><input type="number" id="g3" value="36" min="0" max="255">
+    </div>
+    <div class="row"><label>Warm-up s</label><input type="number" id="warm" value="20" min="0" max="120"></div>
+  </section>
+
+  <section>
+    <details><summary>Protocol overrides (change only from a trace)</summary>
+      <div class="row"><label>IR GPIO reg</label><input type="text" id="irReg" value="0xA8" style="width:70px"><label>mask</label><input type="text" id="irMask" value="0x07" style="width:70px"></div>
+      <div class="row"><label><input type="checkbox" id="xpasel" checked> hold XPASEL (0x03 bit 0x20)</label></div>
+      <div class="row"><label><input type="checkbox" id="speedWord" checked> write 0x8C[0x0F]=2 before each bulk read (vendor capture: always)</label></div>
+      <div class="row"><label>Bulk header byte 2</label><input type="text" id="hdr2" value="0x82" style="width:70px"></div>
+      <div class="row"><label>LPERIOD colour</label><input type="text" id="lpC" value="" placeholder="auto" style="width:80px"><label>IR</label><input type="text" id="lpI" value="0x2AF8" style="width:80px"></div>
+      <div class="row"><label>Dummy end px</label><input type="number" id="dummy" value="20" min="0" max="200"></div>
+    </details>
+  </section>
+
+  <section>
+    <h2>Export</h2>
+    <p class="small">Raw TIFF preserves all received RGB samples without host processing. Aligned/processed TIFF saves the working image. Neither TIFF applies preview inversion, contrast, gamma or rotation. Capture-mode raw data already includes hardware shading. In custom multi-pass scans, raw export saves the first normal-exposure RGB pass.</p>
+    <div class="row"><label><input type="checkbox" id="previewInvert" checked> invert preview / PNG only</label></div>
+    <div class="row"><label><input type="checkbox" id="upright" checked> rotate captured image upright</label><button id="bPng" disabled>Save rendered PNG</button></div>
+    <div class="row"><button id="bRawTiff" disabled>Save raw RGB16 TIFF + sidecar</button><button id="bTiff" disabled>Save aligned/processed TIFF + sidecar</button><button id="bTrace">Save USB trace</button></div>
+    <div class="row"><button id="bRegs" disabled>Dump registers</button><button id="bForget">Forget calibration</button></div>
+  </section>
+</aside>
+
+<div class="stage">
+  <div class="viewer" id="viewer">
+    <canvas id="view" width="720" height="480"></canvas>
+    <div class="crop" id="cropBox" hidden></div>
+    <div class="lamp" id="lampState">lamp off</div>
+    <div class="hint" id="hint">Connect the scanner, boot, home, calibrate, then prescan.</div>
+  </div>
+  <div class="progress" id="prog"><i></i></div>
+  <div class="tabs"><button class="active" data-tab="log">Log</button><button data-tab="results">Passes</button></div>
+  <div class="log" id="log"></div>
+  <div class="results" id="results" hidden></div>
+</div>
+</main>
+
+<script src="capture_profiles.js"></script>
+<script src="capture_runtime.js"></script>
+<script>
+// ---------------------------------------------------------------- constants
+const VID=0x07B3, PID=0x0C3B;
+const MM=25.4, OPT=7200, MOTOR_BASE=3600;
+const TA={x0:0, y0:29, w:36, h:24};           // mm, window from home
+const DPISET={900:150,1800:300,3600:600,7200:1200};
+const XOFF={900:2,1800:5,3600:10,7200:20};
+const LD={r:0,g:12,b:24};                      // line-distance shifts at 3600 base
+const STAGGER={7200:[4,0]};
+const MOTOR={initial:227272,max:1816,steps:30,stepType:2,vref:3,tableMax:1024};
+const INIT={0x01:0x00,0x02:0x78,0x03:0x1F,0x04:0x22,0x05:0x40,0x06:0xF0,0x08:0,0x09:0,0x0A:0,0x0B:0x4A,0x0C:0,
+ 0x10:0,0x11:0,0x12:0,0x13:0,0x14:0,0x15:0,0x16:0x33,0x17:0x1C,0x18:0x10,0x19:0x2A,0x1A:0x04,0x1B:0,0x1C:0x20,0x1D:0x04,0x1E:0x10,0x1F:0x01,
+ 0x20:0x10,0x21:0x04,0x22:0x10,0x23:0x10,0x24:0x04,0x25:0,0x26:0,0x27:0,0x2C:0x02,0x2D:0x58,0x2E:0x80,0x2F:0x80,
+ 0x30:0,0x31:0x14,0x32:0x27,0x33:0xEC,0x34:0x3C,0x35:0,0x36:0xFF,0x37:0xFF,0x38:0x55,0x39:0xF0,0x3D:0,0x3E:0,0x3F:0x01,
+ 0x52:0x01,0x53:0x04,0x54:0x07,0x55:0x0A,0x56:0x0D,0x57:0x10,0x58:0x1B,0x59:0,0x5A:0x40,0x5E:0x01,0x5F:0x01,
+ 0x60:0,0x61:0,0x62:0,0x63:0,0x64:0,0x65:0,0x67:0x7F,0x68:0x7F,0x69:0x01,0x6A:0x04,0x6B:0x31,
+ 0x70:0x01,0x71:0x03,0x72:0x04,0x73:0x05,0x74:0,0x75:0,0x76:0x3C,0x77:0,0x78:0,0x79:0x9F,0x7A:0,0x7B:0,0x7C:0x55,0x7D:0,0x7E:0,0x7F:0,
+ 0x80:0x0F,0x81:0,0x82:0,0x83:0,0x84:0,0x85:0,0x86:0,0x87:0,0x94:0xFF,0x9D:0,0x9E:0,0xA2:0x0F,0xAA:0,0xAB:0x50};
+const SENSOR={0x08:0,0x09:0,0x0A:0,0x16:0x27,0x17:0x0C,0x18:0x10,0x19:0x2A,0x1A:0,0x1B:0,0x1C:0x20,0x1D:0x84,
+ 0x52:0x0A,0x53:0x0D,0x54:0x0F,0x55:0x01,0x56:0x04,0x57:0x07,0x58:0x31,0x59:0x79,0x5A:0xC0,
+ 0x70:0x0C,0x71:0x0D,0x72:0x0E,0x73:0x0F,0x74:0,0x75:0,0x76:0,0x77:0,0x78:0,0x79:0,0x7A:0,0x7B:0,0x7C:0};
+// AFE (Analog Devices layout, upstream tables_frontend.cpp): 0x00/0x01 config, gain R G B = 0x02..0x04, offset R G B = 0x05..0x07
+const AFE_CONFIG={0x00:0xF8,0x01:0x80};
+const AFE_DEFAULTS={
+  v1:{gain:[0x23,0x1B,0x24],offset:[0x1E,0x30,0x18],src:'vendor calibration, capture scanneroutput_1 (this unit)'},
+  v2:{gain:[0x28,0x20,0x28],offset:[0x2F,0x2D,0x23],src:'SANE tables_frontend.cpp PLUSTEK_OPTICFILM_8200I'}
+};
+// Ground truth from the Plustek software's own USB traffic (capture scanneroutput_1, v1 unit, 3600 dpi colour).
+const VENDOR={"boot":[[1,34,2,56,3,159,4,34,5,72,6,240,8,0,9,0,10,0,11,74,13,0,16,0,17,0,18,0,19,0,20,0,21,0,22,59,23,12,24,16,25,42,26,48,27,0,28,0,29,154,30,16,31,1,32,16,33,4,34,1,35,1,36,4],[37,0,38,0,39,0,44,2,45,88,46,128,47,128,48,0,49,20,50,39,51,236,52,60,53,0,54,64,55,0,56,42,57,248,61,0,62,0,63,1,82,1,83,4,84,6,85,9,86,12,87,15,88,27,89,0,90,64,94,1,95,1,103,128],[104,128,105,1,106,4,107,49,108,76,109,128,110,76,111,128,112,7,113,8,114,8,115,9,116,0,117,0,118,0,119,0,120,0,121,255,122,0,123,0,124,0,125,0,126,0,127,0,128,0,129,0,130,0,131,0,132,0,133,0,134,0,135,0],[157,0,166,0,167,7,168,32,169,1],["8c",16,212],[11,74],[81,0,58,0,59,248],[81,1,58,0,59,128],[81,2,58,0,59,0],[81,3,58,0,59,0],[81,4,58,0,59,0],[81,5,58,0,59,0],[81,6,58,0,59,0],[81,7,58,0,59,0],[3,191],["8c",16,212],[1,34,2,56,3,159,4,34,5,72,6,240,8,0,9,0,10,0,11,74,13,0,16,0,17,0,18,0,19,0,20,0,21,0,22,39,23,12,24,16,25,42,26,0,27,0,28,32,29,132,30,16,31,1,32,16,33,4,34,1,35,1,36,4],[37,0,38,0,39,0,44,2,45,88,46,128,47,128,48,0,49,20,50,39,51,236,52,60,53,0,54,64,55,0,56,54,57,176,61,0,62,0,63,1,82,10,83,13,84,15,85,1,86,4,87,7,88,49,89,121,90,192,94,1,95,1,103,128],[104,128,105,1,106,4,107,49,108,76,109,0,110,76,111,128,112,12,113,13,114,14,115,15,116,0,117,0,118,0,119,0,120,0,121,0,122,0,123,0,124,0,125,0,126,0,127,0,128,255,129,0,130,0,131,0,132,0,133,0,134,0,135,0],[157,0,166,0,167,7,168,32,169,1],[81,0,58,0,59,248],[81,1,58,0,59,128],[81,2,58,0,59,0],[81,3,58,0,59,0],[81,4,58,0,59,0],[81,5,58,0,59,0],[81,6,58,0,59,0],[81,7,58,0,59,0]],"fast":[20325,12195,10040,8960,8278,7763,7396,7082,6830,6596,6410,6250,6097,5966,5841,5733,5630,5530,5446,5364,5285,5219,5144,5081,5030,4970,4911,4863,4816,4770,4725,4681,4638,4604,4562,4528,4488,4456,4424,4393,4363,4332,4302,4273,4244,4222,4194,4166,4145,4118,4098,4078,4051,4032,4012,3993,3968,3949,3930,3912,3894,3875,3858,3840,3828,3810,3793,3776,3765,3748,3731,3714,3703,3687,3676,3660,3649,3633,3623,3607,3597,3581,3571,3561,3546,3536,3526,3511,3501,3491,3481,3467,3457,3448,3438,3429,3419,3410,3396,3387,3378,3369,3360,3351,3342,3333,3324,3315,3306,3298,3289,3285,3276,3267,3259,3250,3242,3234,3225,3221,3213,3205,3196,3188,3184,3176,3168,3160,3156,3148,3140,3136,3128,3121,3117,3109,3101,3097,3090,3082,3078,3071,3067,3059,3052,3048,3041,3037,3030,3026,3019,3015,3008,3001,2997,2990,2986,2983,2976,2972,2965,2962,2955,2951,2944,2941,2934,2930,2927,2920,2917,2910,2906,2903,2896,2893,2886,2883,2880,2873,2870,2866,2860,2857,2853,2847,2844,2840,2834,2831,2828,2824,2818,2815,2812,2805,2802,2799,2796,2790,2787,2783,2780,2774,2771,2768,2765,2762,2756,2753,2750,2747,2744,2738,2735,2732,2729,2726,2720,2717,2714,2711,2708,2705,2699,2696,2693,2691,2688,2685,2682,2679,2673,2670,2668,2665,2662,2659,2656,2653,2651,2645,2642,2639,2637,2634,2631,2628,2626,2623,2620,2617,2615,2612,2609,2604]};
+// LPERIOD: 3600 from the vendor capture; others from SANE until captured.
+const LP_COLOUR={3600:0x36B0};
+const LP_COLOUR_DEFAULT=0x2F44;
+function lpColour(dpi){ const v=$('lpC').value.trim(); return v?parseInt(v):(LP_COLOUR[dpi]??LP_COLOUR_DEFAULT); }
+// Vertical oversampling: the vendor scans "3600 dpi" as 3600 across x 7200 along the travel,
+// LINESEL=1, LINCNT = 2 x delivered lines (quarter-steps at 14400/inch). Other resolutions unobserved.
+const YMUL={3600:2};
+// Variant profiles. Confirmed byte-for-byte against upstream SANE tables_gpo.cpp 361-381
+// (7600i-v1 inherits PLUSTEK_OPTICFILM_7500I, 7600i-v2 inherits PLUSTEK_OPTICFILM_8200I).
+const VARIANTS={
+  v1:{name:'7600i-v1 (bcdDevice 4.00, GL843, = 7500i)', bcd:0x400, gpioId:0x1C,
+      gpo:[[0x6B,0x31],[0x6C,0x4C],[0x6D,0x00],[0x6E,0x4C],[0x6F,0x80],[0xA6,0x00],[0xA7,0x07],[0xA8,0x20],[0xA9,0x01]],
+      irReg:0xA8, irMask:0x07, asic:'GL843', headerPerChunk:false, vendorBoot:true},
+  v2:{name:'7600i-v2 (bcdDevice 6.05, GL845, = 8200i)', bcd:0x605, gpioId:0x1D,
+      gpo:[[0x6B,0x30],[0x6C,0x4C],[0x6D,0x80],[0x6E,0x4C],[0x6F,0x80],[0xA6,0x00],[0xA7,0x07],[0xA8,0x20],[0xA9,0x01]],
+      irReg:0xA8, irMask:0x04, asic:'GL845', headerPerChunk:true, vendorBoot:false}
+};
+let variant=VARIANTS.v1;
+const STATUS_BITS=[[0x80,'PWR'],[0x40,'BUFEMPTY'],[0x20,'FEEDFSH'],[0x10,'SCANFSH'],[0x08,'HOME'],[0x04,'LAMP'],[0x02,'FEBUSY'],[0x01,'MOTOR']];
+const CHUNK=0xF000;
+const MERGE_LO=20000, MERGE_HI=44000, CLIP=64000;   // multi-exposure crossfade window
+const LP_MIN=11000, LP_MAX=0xFFFF;   // genesys.cpp 4612-4615; regs 0x38/0x39 are 16-bit
+function clampLperiod(v,label){
+  if(v>LP_MAX){ log('w',`${label}: LPERIOD ${v} exceeds the 16-bit maximum ${LP_MAX}; clamped (reduce multi-exposure factor for a longer exposure)`); return LP_MAX; }
+  if(v<LP_MIN) log('w',`${label}: LPERIOD ${v} is below SANE's stated minimum ${LP_MIN}. Upstream notes that floor was found by trial and error on a 7400v1, and the 7500i sensor table specifies 0x2AF8 (10996) for infrared, so this is expected for the IR pass.`);
+  return v;
+}
+
+// ---------------------------------------------------------------- ui helpers
+const $=id=>document.getElementById(id);
+const hex=(v,n=2)=>'0x'+v.toString(16).toUpperCase().padStart(n,'0');
+const num=id=>parseInt($(id).value);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const t0=performance.now();
+let trace=[];
+function log(kind,text){ const d=document.createElement('div'); d.className=kind||''; d.textContent=((performance.now()-t0)/1000).toFixed(2).padStart(8)+'  '+text; const L=$('log'); L.appendChild(d); L.scrollTop=L.scrollHeight; }
+function rec(e){ e.t=+((performance.now()-t0)/1000).toFixed(4); trace.push(e); }
+function progress(f,ir){ const p=$('prog'); p.classList.toggle('ir',!!ir); p.firstElementChild.style.width=(f*100).toFixed(1)+'%'; }
+function showStatus(v){ const b=$('status41'); b.innerHTML=''; const s=document.createElement('span'); s.textContent='0x41='+hex(v); b.appendChild(s); for(const [m,n] of STATUS_BITS){ const c=document.createElement('span'); c.className=v&m?'on':''; c.textContent=n; b.appendChild(c);} }
+function setLamp(state){ const l=$('lampState'); l.className='lamp '+(state==='ir'?'ir':state?'on':''); l.textContent=state==='ir'?'infrared LED on':state?'lamp on':'lamp off'; }
+function enable(ids,on=true){ ids.forEach(i=>$(i).disabled=!on); }
+function done(id){ $(id).classList.add('done'); $(id).querySelector('.state').textContent='done'; }
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('active',x===b)); $('log').hidden=b.dataset.tab!=='log'; $('results').hidden=b.dataset.tab!=='results'; });
+
+// ---------------------------------------------------------------- transport
+let dev=null, epIn=1, epOut=2, fake=false, cancelFlag=false, operationActive=false;
+const shadow={};
+class Cancelled extends Error{}
+function checkCancel(){ if(cancelFlag) throw new Cancelled('cancelled'); }
+
+async function ctlOut(value,index,data){
+  const bytes=Uint8Array.from(data); const request=bytes.length>1?0x04:0x0C;
+  rec({dir:'out',req:request,value,index,data:[...bytes]});
+  for(let attempt=0;attempt<10;attempt++){
+    const r=await dev.controlTransferOut({requestType:'vendor',recipient:'device',request,value,index},bytes);
+    if(r.status!=='ok') continue;
+    // mandatory write-ack on bcdDevice >= 2.00: poll status word 0x20 bit 0
+    for(let i=0;i<10;i++){ const a=await rawIn(0x0C,0x8E,0x20,1); if(a[0]&1) return; }
+  }
+  throw new Error('control write not acknowledged '+hex(value));
+}
+async function rawIn(request,value,index,len){
+  const r=await dev.controlTransferIn({requestType:'vendor',recipient:'device',request,value,index},len);
+  if(r.status!=='ok') throw new Error('control read failed '+hex(value)+'/'+hex(index));
+  return new Uint8Array(r.data.buffer,r.data.byteOffset,r.data.byteLength);
+}
+async function ctlIn(value,index,len){ const d=await rawIn(len>1?0x04:0x0C,value,index,len); rec({dir:'in',value,index,data:[...d]}); return d; }
+const writeReg=async(reg,val)=>{ await ctlOut(0x83,0,[reg,val&0xFF]); shadow[reg]=val&0xFF; };
+async function writeRegs(pairs){ for(let i=0;i<pairs.length;i+=32){ const b=[]; for(const [r,v] of pairs.slice(i,i+32)){ b.push(r,v&0xFF); shadow[r]=v&0xFF; } await ctlOut(0x83,0,b);} }
+async function readReg(reg){ await ctlOut(0x83,0,[reg]); return (await ctlIn(0x84,0,1))[0]; }
+const status=async()=>readReg(0x41);
+const write8c=(idx,val)=>ctlOut(0x8C,idx,[val]);
+async function writeU16(reg,v){ await writeReg(reg,v>>8); await writeReg(reg+1,v&0xFF); }
+async function writeU24(reg,v){ await writeReg(reg,(v>>16)&0xFF); await writeReg(reg+1,(v>>8)&0xFF); await writeReg(reg+2,v&0xFF); }
+async function afeWrite(addr,val){ await ctlOut(0x83,0,[0x51,addr,0x3A,(val>>8)&0xFF,0x3B,val&0xFF]); }
+
+async function bulkEnd(){ // vendor capture: no 0x8D is ever sent; one 0x8E/0x18 poll per bulk header
+  for(let i=0;i<256;i++){ const s=(await ctlIn(0x8E,0x18,1))[0]; if((s&0x0C)===0) return; } log('w','bulk end: state never cleared'); }
+async function bulkRead(total,onChunk){
+  // GL843 (v1): ONE 0x82 header for the whole transfer, then plain bulk reads (vendor capture;
+  // SANE scanner_interface_usb.cpp 230-237). GL845+ (v2): a header before every chunk.
+  const out=new Uint8Array(total); let got=0;
+  await ctlOut(0x83,0,[0x45]);
+  const h2=parseInt($('hdr2').value), perChunk=variant.headerPerChunk;
+  // header bytes 0-3: GL843 [BULK_IN=0, BULK_RAM=0, 0x82, 0] (vendor capture = SANE);
+  // GL845 [0, 0, 0, 0x10] - hard-coded 0x10000000 address (SANE scanner_interface_usb.cpp 189-198)
+  const hb=variant.asic==='GL845'?[0,0,0,0x10]:[0,0,h2,0];
+  const header=n=>ctlOut(0x82,0,[...hb,n&0xFF,(n>>>8)&0xFF,(n>>>16)&0xFF,(n>>>24)&0xFF]);
+  if(!perChunk){ if($('speedWord').checked) await write8c(0x0F,2); await header(total); rec({dir:'bulkhdr',len:total}); }
+  while(got<total){
+    checkCancel();
+    const n=Math.min(CHUNK,total-got);
+    if(perChunk){ if($('speedWord').checked) await write8c(0x0F,2); await header(n); }
+    let need=n;
+    while(need>0){
+      const r=await dev.transferIn(epIn,Math.min(need,0x10000));
+      if(r.status!=='ok'||!r.data.byteLength) throw new Error('bulk read failed/empty');
+      out.set(new Uint8Array(r.data.buffer,r.data.byteOffset,r.data.byteLength),got);
+      got+=r.data.byteLength; need-=r.data.byteLength;
+      if(onChunk) onChunk(got,out);
+    }
+    rec({dir:'bulk',len:n});
+    if(perChunk) await bulkEnd();
+  }
+  if(!perChunk) await bulkEnd();
+  return out;
+}
+async function uploadSlopeTable(n,table){
+  // GL843 gamma/table path (SANE write_gamma; Plustek 0x100347E4): 0x5B/0x5C address in 16-byte units, register 0x28, header [1,0,0,0,len]
+  const addr=0x40000+0x8000*n;
+  const bytes=new Uint8Array(table.length*2); table.forEach((v,i)=>{ bytes[2*i]=v&0xFF; bytes[2*i+1]=v>>8; });
+  await writeReg(0x5B,(addr>>12)&0xFF); await writeReg(0x5C,(addr>>4)&0xFF);
+  await ctlOut(0x83,0,[0x28]);
+  const len=bytes.length;
+  await ctlOut(0x82,0,[1,0,0,0,len&0xFF,(len>>8)&0xFF,(len>>16)&0xFF,0]);
+  const pad=new Uint8Array(Math.ceil(len/512)*512); pad.set(bytes);
+  const r=await dev.transferOut(epOut,pad); if(r.status!=='ok') throw new Error('slope table bulk write failed');
+  rec({dir:'bulkout',len:pad.length,table:n});
+  await bulkEnd();
+  if(variant.vendorBoot) await writeReg(0x5B,((addr>>12)&0xFF)&~0x40);   // vendor capture
+  else { await writeReg(0x5B,0); await writeReg(0x5C,0); }              // SANE
+}
+
+// ---------------------------------------------------------------- native USB bridge
+// When this page is served by the opticfilm helper program, window.NATIVE_USB is set and USB
+// traffic goes to the helper over HTTP on 127.0.0.1 instead of through WebUSB. The object returned
+// by nativeOpen() mimics the subset of the WebUSB USBDevice API that this page uses.
+async function nativeCall(path,body){
+  const r=await fetch(path,{method:'POST',headers:{'X-Token':window.NATIVE_USB.token},body});
+  if(r.ok) return new Uint8Array(await r.arrayBuffer());
+  if(r.status===409) return null;                       // endpoint stalled
+  throw new Error((await r.text())||('helper returned HTTP '+r.status));
+}
+async function nativeOpen(){
+  const info=JSON.parse(new TextDecoder().decode(await nativeCall('/api/open')));
+  const RT={standard:0x00,class:0x20,vendor:0x40}, RC={device:0,interface:1,endpoint:2,other:3};
+  const rt=(s,inDir)=>(inDir?0x80:0)|RT[s.requestType]|RC[s.recipient];
+  const q=o=>new URLSearchParams(o).toString();
+  const bcd=info.bcdDevice;
+  return {
+    backend:info.backend, productName:info.productName,
+    deviceVersionMajor:bcd>>8, deviceVersionMinor:(bcd>>4)&15, deviceVersionSubminor:bcd&15,
+    configuration:{interfaces:[{alternate:{endpoints:info.endpoints}}]},
+    async open(){}, async selectConfiguration(){}, async claimInterface(){},
+    async close(){ await nativeCall('/api/close'); },
+    async controlTransferOut(s,data){
+      const d=await nativeCall('/api/ctl?'+q({rt:rt(s,false),req:s.request,val:s.value,idx:s.index}),data);
+      return d?{status:'ok',bytesWritten:data.byteLength}:{status:'stall',bytesWritten:0};
+    },
+    async controlTransferIn(s,len){
+      const d=await nativeCall('/api/ctl?'+q({rt:rt(s,true),req:s.request,val:s.value,idx:s.index,len}));
+      return d?{status:'ok',data:new DataView(d.buffer,d.byteOffset,d.byteLength)}:{status:'stall',data:new DataView(new ArrayBuffer(0))};
+    },
+    async transferIn(ep,len){
+      const d=await nativeCall('/api/bulk?'+q({ep:0x80|ep,len}));
+      return d?{status:'ok',data:new DataView(d.buffer,d.byteOffset,d.byteLength)}:{status:'stall',data:new DataView(new ArrayBuffer(0))};
+    },
+    async transferOut(ep,data){
+      const d=await nativeCall('/api/bulk?'+q({ep:ep&0x7F}),data);
+      return d?{status:'ok',bytesWritten:data.byteLength}:{status:'stall',bytesWritten:0};
+    }
+  };
+}
+if(window.NATIVE_USB) addEventListener('pagehide',()=>{ fetch('/api/close',{method:'POST',headers:{'X-Token':window.NATIVE_USB.token},keepalive:true}).catch(()=>{}); });
+
+// ---------------------------------------------------------------- fake device for dry runs
+function makeFake(){
+  const regs=new Uint8Array(256); regs[0x41]=0x88; regs[0x06]=0x80;
+  let addrReg=0, lines=0, pending=0, lamp=false, ir=false, seed=1, homePolls=0, movePolls=0, fedDone=false;
+  const rnd=()=>{ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; };
+  return {
+    fake:true,
+    async controlTransferOut(s,b){
+      if(s.value===0x83){ if(b.length===1) addrReg=b[0]; else for(let i=0;i<b.length;i+=2){ regs[b[i]]=b[i+1]; if(b[i]===0x02&&(b[i+1]&0x20)) homePolls=0; if(b[i]===0x03){lamp=!!(b[i+1]&0x10);} if(b[i]===0xA8) ir=!!(b[i+1]&0x07); } }
+      if(s.value===0x82&&b[0]===0){ pending=(b[4]|(b[5]<<8)|(b[6]<<16)|(b[7]<<24))>>>0; }
+      return {status:'ok'};
+    },
+    async controlTransferIn(s,len){
+      let d=new Uint8Array(len);
+      if(s.value===0x8E){ d[0]=s.index===0x20?1:s.index===0x18?0:0x08; }
+      else if(s.value===0x84){ let v=regs[addrReg];
+        if(addrReg===0x41){ // moving away from home while AGOHOME is set, arriving after a few polls
+          const seeking=(regs[0x02]&0x20)&&regs[0x0F];
+          if(seeking){ homePolls++; if(homePolls>4){ regs[0x02]&=~0x20; regs[0x0F]=0; homePolls=0; } }
+          const moving=(regs[0x02]&0x08)&&regs[0x0F];            // FASTFED move
+          if(moving){ movePolls++; if(movePolls>3){ regs[0x0F]=0; movePolls=0; fedDone=true; } }
+          v=0x80|(lamp?4:0)|(seeking&&homePolls?0:0x08)|(fedDone?0x20:0)|(moving&&regs[0x0F]?0x01:0);
+          if(fedDone&&!regs[0x0F]) fedDone=false;
+        }
+        if(addrReg===0x42)v=0x02; if(addrReg===0x48)v=0x1F; if(addrReg===0x49||addrReg===0x4A)v=0xFF; d[0]=v; }
+      return {status:'ok',data:new DataView(d.buffer)};
+    },
+    async transferIn(ep,len){
+      const n=Math.min(len,pending); pending-=n; const d=new Uint8Array(n);
+      const lb=(scanCtx?scanCtx.lineBytes:1024);
+      for(let i=0;i<n;i+=2){ const px=((i%lb)/6)|0, ch=((i%lb)/2|0)%3, ln=(lines+((i/lb)|0));
+        let v; const dark=!lamp&&!ir;
+        if(dark) v=900+rnd()*60;
+        else { const x=px/(lb/6), y=(ln%400)/400; const base=ir?52000-8000*Math.abs(Math.sin(x*9)*Math.cos(y*7)):[42000,36000,30000][ch]*(0.55+0.45*Math.sin(x*6+ch)*Math.cos(y*4)); v=base+rnd()*300; if(!ir&&((x*30|0)+(y*20|0))%17===0) v*=0.35; if(ir&&((x*30|0)+(y*20|0))%17===0) v*=0.3; }
+        v=Math.max(0,Math.min(65535,v|0)); d[i]=v&0xFF; d[i+1]=v>>8; }
+      lines+=(n/lb)|0;
+      return {status:'ok',data:new DataView(d.buffer)};
+    },
+    async transferOut(){ return {status:'ok'}; },
+    async open(){}, async close(){}, async selectConfiguration(){}, async claimInterface(){},
+    productName:'OpticFilm 7600i (dry run)', deviceVersionMajor:4, deviceVersionMinor:0, deviceVersionSubminor:0
+  };
+}
+
+// ---------------------------------------------------------------- connect / boot
+function selectVariant(bcd){
+  const raw=(dev.deviceVersionMajor<<8)|(dev.deviceVersionMinor<<4)|dev.deviceVersionSubminor;
+  const choice=$('variant').value;
+  if(choice==='auto'){
+    if(raw===0x605) variant=VARIANTS.v2;
+    else if(raw===0x400) variant=VARIANTS.v1;
+    else { variant=VARIANTS.v1; log('w',`bcdDevice ${bcd} is neither 4.00 nor 6.05; defaulting to v1 tables. Pick a variant manually if this is wrong.`); }
+  } else variant=VARIANTS[choice];
+  $('irReg').value=hex(variant.irReg); $('irMask').value=hex(variant.irMask);
+  const af=AFE_DEFAULTS[variant===VARIANTS.v2?'v2':'v1'];
+  ['g1','g2','g3'].forEach((id,i)=>$(id).value=af.gain[i]); ['o1','o2','o3'].forEach((id,i)=>$(id).value=af.offset[i]);
+  log('',`AFE defaults: ${af.src}`);
+  $('variantNote').textContent=`${variant.name} — GPIO set ${hex(variant.gpioId)}, IR ${hex(variant.irReg)} |= ${hex(variant.irMask)}`;
+  log('',`variant: ${variant.name}${choice==='auto'?' (auto)':' (forced)'}`);
+}
+async function connect(useFake){
+  fake=!!useFake;
+  if(fake){ dev=makeFake(); }
+  else {
+    if(window.NATIVE_USB){ dev=await nativeOpen(); log('io','native USB backend: '+dev.backend); }
+    else {
+      if(!navigator.usb){ log('err','WebUSB is not available. Use Chromium on Linux with a udev rule for 07b3:0c3b.'); return; }
+      dev=await navigator.usb.requestDevice({filters:[{vendorId:VID,productId:PID}]});
+    }
+    await dev.open(); if(!dev.configuration) await dev.selectConfiguration(1); await dev.claimInterface(0);
+    const eps=dev.configuration.interfaces[0].alternate.endpoints;
+    epIn=(eps.find(e=>e.type==='bulk'&&e.direction==='in')||{endpointNumber:1}).endpointNumber;
+    epOut=(eps.find(e=>e.type==='bulk'&&e.direction==='out')||{endpointNumber:2}).endpointNumber;
+    log('io','endpoints: '+eps.map(e=>e.type+' '+e.direction+' ep'+e.endpointNumber+' '+e.packetSize+'B').join(', '));
+  }
+  const bcd=`${dev.deviceVersionMajor}.${dev.deviceVersionMinor}${dev.deviceVersionSubminor}`;
+  $('devline').innerHTML=`<b>${dev.productName||'07b3:0c3b'}</b>  bcdDevice ${bcd}  ${fake?'dry run':(dev.backend||'WebUSB')+' ep'+epIn+'/'+epOut}`;
+  selectVariant(bcd); syncProfileUI();
+  $('devline').innerHTML+=`  <b>${variant.name.split(' ')[0]}</b>`;
+  log('ok','connected '+(fake?'(dry run)':''));
+  enable(['bBoot','bStop','bRegs','bTrace']);
+  $('hint').textContent='Boot the ASIC next.';
+}
+
+async function boot(){
+  log('','boot: reading USB speed, cold-boot flag');
+  const spd=(await ctlIn(0x8E,0,1))[0]; const hs=!!(spd&0x08);
+  log('io',`speed word ${hex(spd)} (${hs?'high':'full'} speed)`);
+  if(variant.vendorBoot){
+    // Replay the Plustek software's boot exactly as captured (28 transfers, original grouping).
+    log('',`boot: replaying vendor sequence (${VENDOR.boot.length} transfers from capture)`);
+    for(const g of VENDOR.boot){
+      checkCancel();
+      if(g[0]==='8c') await write8c(g[1],g[2]);
+      else { await ctlOut(0x83,0,g); for(let i=0;i<g.length-1;i+=2) shadow[g[i]]=g[i+1]; }
+    }
+  } else {
+    const r06=await readReg(0x06); const cold=(r06&0x80)===0;
+    log('io',`reg06 ${hex(r06)} → ${cold?'cold':'warm'} boot (SANE path)`);
+    if(cold){ await writeReg(0x0E,1); await writeReg(0x0E,0); }
+    await write8c(0x0F,hs?0x11:0x14);
+    const map={...INIT,...SENSOR}; map[0x05]=(map[0x05]&~0xC0)|0x40; map[0x0B]=(map[0x0B]&0x07)|0x08|0x40;
+    const pairs=Object.keys(map).map(k=>[+k,map[k]]).sort((a,b)=>a[0]-b[0]);
+    await writeRegs(pairs);
+    await write8c(0x10,0xD4);
+    await writeRegs([[0x29,0],[0x2A,0],[0x2B,0]]);
+  }
+  await writeRegs(variant.gpo);
+  await sleep(100);
+  await afeApply();
+  const s=await status(); showStatus(s);
+  log('ok','ASIC booted, AFE loaded, GPIO set');
+  done('bBoot'); enable(['bHome','bLamp']); $('hint').textContent='Home the carriage next.';
+}
+async function afeApply(){
+  const vals={...AFE_CONFIG,0x02:num('g1'),0x03:num('g2'),0x04:num('g3'),0x05:num('o1'),0x06:num('o2'),0x07:num('o3')};
+  for(const a of Object.keys(vals)) await afeWrite(+a,vals[a]);
+}
+
+// ---------------------------------------------------------------- motor
+async function stopMotor(){
+  const r1=await readReg(0x01); await writeReg(0x01,r1&~0x01);
+  const r2=await readReg(0x02); await writeReg(0x02,r2&~0x10);
+  await writeReg(0x0F,0); await sleep(100);
+}
+async function home(timeoutMs=60000){
+  let s=await status(); if(s&0x08){ log('ok','already at home'); showStatus(s); return; }
+  // AGOHOME runs on table slot 4 (HOME_TABLE, 0x60000), which nothing had uploaded
+  await writeRegs([[0x67,0x80],[0x68,0x80],[0x6A,0xFF],[0x5F,0x01],[0x1F,0x00]]);
+  await uploadSlopeTable(3,VENDOR.fast); await uploadSlopeTable(4,VENDOR.fast);
+  await writeReg(0x02,0xB4); await writeU24(0x3D,40000);
+  const r1=await readReg(0x01); await writeReg(0x01,r1&~0x01);
+  await writeReg(0x0F,1);
+  const t=performance.now();
+  try{ while(true){ checkCancel(); s=await status(); showStatus(s); if(s&0x08) break; if(performance.now()-t>timeoutMs) throw new Error('home: sensor not reached in '+timeoutMs/1000+' s, motor stopped'); await sleep(100);} }
+  finally{ await stopMotor(); }
+  log('ok','carriage at home');
+}
+
+// ---------------------------------------------------------------- motor slope tables
+function slopeTable(target){
+  const st=MOTOR.stepType, initV=1/MOTOR.initial, maxV=1/MOTOR.max, acc=(maxV*maxV-initV*initV)/(2*MOTOR.steps);
+  const stepW=i=>{ if(i<2) return MOTOR.initial>>st; const v=Math.sqrt(initV*initV+2*acc*(i-1)); return Math.floor(1/v)>>st; };
+  const fin=Math.max(target>>st,MOTOR.max>>st); const t=[];
+  while(t.length<MOTOR.tableMax-1){ const c=stepW(t.length); if(c<=fin) break; t.push(c); }
+  t.push(fin); while(t.length<MOTOR.tableMax-1&&(t.length%1!==0||t.length<2)) t.push(t[t.length-1]);
+  return t;
+}
+function zmod(exposure,table,move,bufAccel){ const tot=table.reduce((a,b)=>a+b,0), cruise=table[table.length-1]; return [(tot+bufAccel*cruise)%exposure,(tot+move*cruise)%exposure]; }
+
+// ---------------------------------------------------------------- geometry
+function geometry(dpi,crop,ir,lperiod,yAbs=null){
+  lperiod=clampLperiod(lperiod, ir?'IR pass':'colour pass');
+  const x=crop.x, y=(yAbs!==null?yAbs:TA.y0+crop.y), w=crop.w, h=crop.h;
+  let pixels=Math.round(w*dpi/MM); if(dpi>1200) pixels=Math.floor(pixels/16)*16;
+  const optPx=Math.round(pixels*OPT/dpi);
+  const str=Math.round(x*OPT/MM)+XOFF[dpi], end=str+optPx;
+  // Custom SANE-derived profiles use equal X/Y resolution; capture profiles are separate.
+  const yMul=1, yres=dpi*yMul, linesel=yMul-1;
+  const lines=Math.round(h*yres/MM);
+  // colour line-distance shifts scale with yres over the 3600 motor base (low.cpp 961-963);
+  // measured in the vendor capture as G+24, B+48 at yres 7200.
+  const sc=yres/MOTOR_BASE, sh={r:Math.round(LD.r*sc),g:Math.round(LD.g*sc),b:Math.round(LD.b*sc)};
+  const stag=STAGGER[dpi]||[], maxStag=stag.length?Math.max(...stag):0;
+  const lincnt=lines+Math.max(sh.r,sh.g,sh.b)+maxStag;          // lines delivered over USB
+  // LINCNT: the vendor programs 2x the lines it reads and ends the scan from the host once it has
+  // them (0x41=0xA5 at end: MOTOR still set, SCANFSH clear). Mirrored here; stopMotor() ends the scan.
+  const lincntReg=lincnt*(1+linesel);
+  const slopeDpi=yres*(1+linesel);   // SANE gl843.cpp: slope_dpi = yres*(1+dummy); 14400 at 3600 -> cruise = LPERIOD
+  const starty=Math.round(y*MOTOR_BASE/MM);
+  const lineBytes=pixels*3*2;
+  const vendor=false; // Exact captured acquisitions use CaptureRuntime; custom geometry is SANE-derived.
+  return {dpi,yres,yMul,linesel,pixels,optPx,str,end,lines,lincnt,lincntReg,slopeDpi,shift:sh,stagger:stag,starty,lineBytes,totalBytes:lineBytes*lincnt,lperiod,ir,vendor};
+}
+
+// ---------------------------------------------------------------- configure + acquire one pass
+let scanCtx=null;
+async function configure(g,opts){
+  const tg=1<<((shadow[0x1C]??0x20)&7);
+  const lp=Math.max(1,Math.floor(g.lperiod/tg));
+  let r01=((shadow[0x01]??0x22)|0x02)&~0x20&~0x01;
+  let r03=(shadow[0x03]??0xBF)&~0x40; r03=g.ir?(r03&~0x10):(r03|0x10); r03=$('xpasel').checked?(r03|0x20):(r03&~0x20);
+  const r04=((shadow[0x04]??0x22)&~0x8C)|0x60;
+  const r05=((shadow[0x05]??0x48)&~0xC8)|0x40;
+  const table=slopeTable(Math.floor(g.lperiod*g.slopeDpi/MOTOR_BASE));
+  const fast=slopeTable(MOTOR.max);
+  const feedl0=g.starty<<MOTOR.stepType;
+  const fastFed=(feedl0>900)&&!opts.motorOff;                                  // gl843.cpp use_fast_fed
+  const dist=table.length+(fastFed?fast.length*2:0);                           // gl843.cpp 767-777
+  const feedl=dist<feedl0?feedl0-dist:1;
+  const minRestep=Math.max(1,Math.floor(table.length/2)-1);
+  const ccdlmt=((shadow[0x0C]??0)&0x0F)+1;
+  let [z1,z2]=zmod(g.lperiod*ccdlmt*tg,table,feedl,minRestep);
+  if(g.yres>600){ z1=0; z2=0; }                                                  // gl843.cpp 792-796
+  // FASTFED on long feeds, as upstream gl843.cpp does (feed_steps > 900), so the feed is not run at scan speed
+  const r02=(opts.motorOff?0:0x10)|((opts.motorOff||g.yres>=2400)?0x40:0)|(fastFed?0x08:0);     // ACDCDIS as gl843.cpp 713-718
+  const vref=0x50|({4:0x0a,2:0x0f,1:0x0f}[Math.round(OPT/g.yres)]||0);          // gl843.cpp 814-838, OPTICFILM_7500I
+  const pairs=[[0x01,r01],[0x02,r02],[0x03,r03],[0x04,r04],[0x05,r05],[0x2E,0x7F],[0x2F,0x7F],
+    [0x2C,DPISET[g.dpi]>>8],[0x2D,DPISET[g.dpi]&0xFF],[0x30,g.str>>8],[0x31,g.str&0xFF],[0x32,g.end>>8],[0x33,g.end&0xFF],
+    [0x34,num('dummy')],[0x35,(g.lineBytes>>17)&0xFF],[0x36,(g.lineBytes>>9)&0xFF],[0x37,(g.lineBytes>>1)&0xFF],
+    [0x38,lp>>8],[0x39,lp&0xFF],[0x25,(g.lincntReg>>16)&0xFF],[0x26,(g.lincntReg>>8)&0xFF],[0x27,g.lincntReg&0xFF],
+    [0x21,table.length&0xFF],[0x24,table.length&0xFF],[0x69,table.length&0xFF],[0x6A,fast.length&0xFF],
+    [0x3D,(feedl>>16)&0xFF],[0x3E,(feedl>>8)&0xFF],[0x3F,feedl&0xFF],[0x22,minRestep&0xFF],[0x23,minRestep&0xFF],[0x5F,fast.length&0xFF],
+    // Z1MOD/Z2MOD are 24-bit values in 0x60-0x62 / 0x63-0x65 (not a step selector)
+    [0x60,(z1>>16)&0xFF],[0x61,(z1>>8)&0xFF],[0x62,z1&0xFF],[0x63,(z2>>16)&0xFF],[0x64,(z2>>8)&0xFF],[0x65,z2&0xFF],
+    // step type lives in 0x67 (scan) / 0x68 (fast) bits 6-7: quarter = 0x80 (gl843.cpp 355-356, 802-803; vendor capture)
+    [0x1E,((shadow[0x1E]??0x10)&0xF0)|g.linesel],[0x67,MOTOR.stepType<<6],[0x68,MOTOR.stepType<<6],[0x80,vref]];
+  await writeRegs(pairs);
+  for(const n of [0,1,2]) await uploadSlopeTable(n,table);
+  for(const n of [3,4]) await uploadSlopeTable(n,fast);
+  scanCtx={...g,feedl,table:table.length,preMove:0};
+  log('io',`configured (SANE profile) ${g.dpi}×${g.yres} dpi: ${g.pixels}px × ${g.lincnt} lines, STR ${g.str} END ${g.end}, LPERIOD ${hex(g.lperiod,4)}→reg ${hex(lp,4)} (tg ${tg}), FEEDL ${feedl}, slope ${table.length} steps, ${(g.totalBytes/1048576).toFixed(1)} MB`);
+}
+async function setIR(on){ const reg=parseInt($('irReg').value), m=parseInt($('irMask').value); const v=await readReg(reg); await writeReg(reg,on?(v|m):(v&~m)); }
+async function readFeed(){ return (await readReg(0x4A))+(await readReg(0x49))*256+((await readReg(0x48))&0x1F)*65536; }
+async function validWords(){ let w=(await readReg(0x42))&2; w=w*256+await readReg(0x43); w=w*256+await readReg(0x44); return w*256+await readReg(0x45); }
+
+// ---------------------------------------------------------------- decode: line shifts, stagger, calibration
+function decode(raw,g){
+  // raw: Uint16 chunky RGB per line, lincnt lines. Output planes per channel, lines × pixels, shifts applied.
+  const P=g.pixels, L=g.lines, out=[new Uint16Array(P*L),new Uint16Array(P*L),new Uint16Array(P*L)];
+  const sh=[g.shift.r,g.shift.g,g.shift.b];
+  for(let c=0;c<3;c++){ const s=sh[c]; for(let y=0;y<L;y++){ const src=(y+s)*P*3, dst=y*P; for(let x=0;x<P;x++) out[c][dst+x]=raw[src+x*3+c]; } }
+  if(g.stagger.length===2&&g.stagger[0]){ // odd/even pixel columns come from different lines at 7200 dpi
+    const st=g.stagger; for(let c=0;c<3;c++){ const o=out[c], cp=new Uint16Array(o); for(let y=0;y<L;y++) for(let x=0;x<P;x++){ const sy=y+st[x&1]; if(sy<L) o[y*P+x]=cp[sy*P+x]; } }
+  }
+  return out;
+}
+let calib=JSON.parse(localStorageGet('calib')||'null');
+function localStorageGet(k){ try{return localStorage.getItem(k);}catch(e){return null;} }
+function localStorageSet(k,v){ try{localStorage.setItem(k,v);}catch(e){} }
+function applyCal(planes,g){
+  if(g.captured||!$('applyCal').checked) return planes;
+  if(!calib||calib.dpi!==g.dpi||calib.str===undefined){ log('w','No matching host calibration; image is uncorrected. Calibrate at this resolution first.'); return planes; }
+  const start=Math.round((g.str-calib.str)*g.dpi/OPT);
+  if(start<0||start+g.pixels>calib.pixels){log('w','Crop lies outside host calibration; image is uncorrected.');return planes;}
+  return planes.map((pl,c)=>{const o=new Uint16Array(pl.length),d=calib.dark[c],gn=calib.gain[c];
+    for(let i=0;i<pl.length;i++){const x=start+i%g.pixels;o[i]=Math.max(0,Math.min(65535,(pl[i]-d[x])*gn[x]))|0;}return o;});
+}
+
+// ---------------------------------------------------------------- registration
+// Two passes of the same frame assume the carriage repeats exactly. It may not.
+// Cross-correlate a few rows of the green plane to measure any offset before merging.
+function registerPasses(a,b,g,label,maxShift=4){
+  const P=g.pixels, L=g.lines;
+  if(L<32||P<32) return {dy:0,dx:0,confidence:0,skipped:'frame too small'};
+  const rows=[], nRows=Math.min(24,L-2*maxShift-2);
+  for(let i=0;i<nRows;i++) rows.push(maxShift+1+Math.floor(i*(L-2*maxShift-2)/nRows));
+  const x0=Math.floor(P*0.15), x1=Math.floor(P*0.85);
+  // normalised cross-correlation over a small (dy,dx) search window
+  let best={dy:0,dx:0,score:-2}, second=-2;
+  for(let dy=-maxShift;dy<=maxShift;dy++){
+    for(let dx=-maxShift;dx<=maxShift;dx++){
+      let sa=0,sb=0,saa=0,sbb=0,sab=0,n=0;
+      for(const y of rows){
+        const ya=y, yb=y+dy; if(yb<0||yb>=L) continue;
+        for(let x=x0;x<x1;x+=3){
+          const xb=x+dx; if(xb<0||xb>=P) continue;
+          const va=a[ya*P+x], vb=b[yb*P+xb];
+          sa+=va; sb+=vb; saa+=va*va; sbb+=vb*vb; sab+=va*vb; n++;
+        }
+      }
+      if(n<64) continue;
+      const cov=sab/n-(sa/n)*(sb/n), va=saa/n-(sa/n)**2, vb=sbb/n-(sb/n)**2;
+      const r=(va>0&&vb>0)?cov/Math.sqrt(va*vb):0;
+      if(r>best.score){ second=best.score; best={dy,dx,score:r}; } else if(r>second) second=r;
+    }
+  }
+  const conf=best.score-Math.max(0,second);
+  const res={dy:best.dy,dx:best.dx,correlation:+best.score.toFixed(4),confidence:+conf.toFixed(4)};
+  if(best.score<0.15){ res.unreliable=true; log('w',`${label}: correlation too weak to measure registration (r=${res.correlation}) — low-contrast or mismatched passes; no correction applied`); return res; }
+  if(best.dy===0&&best.dx===0) log('ok',`${label}: passes register exactly (r=${res.correlation})`);
+  else log('w',`${label}: passes offset by dy ${best.dy}, dx ${best.dx} px (r=${res.correlation}). Merging without realignment will soften detail — record this; carriage repeatability may need compensating.`);
+  return res;
+}
+function shiftPlane(pl,g,dy,dx){
+  if(!dy&&!dx) return pl;
+  const P=g.pixels,L=g.lines,o=new Uint16Array(pl.length);
+  for(let y=0;y<L;y++){ const sy=y+dy; if(sy<0||sy>=L) continue;
+    for(let x=0;x<P;x++){ const sx=x+dx; if(sx<0||sx>=P) continue; o[y*P+x]=pl[sy*P+sx]; } }
+  return o;
+}
+
+// ---------------------------------------------------------------- preview
+function drawPlanes(canvas,planes,g,opts={}){
+  if(g.captured) return drawCaptured(canvas,planes,g,opts);
+  const P=g.pixels, L=g.lines, W=Math.min(P,opts.maxW||1400), H=Math.round(L*W/P*g.dpi/(g.yres||g.dpi));
+  canvas.width=W; canvas.height=H; const ctx=canvas.getContext('2d'); const im=ctx.createImageData(W,H); const d=im.data;
+  const invert=opts.invert, gamma=opts.gamma||2.2; const lut=new Uint8Array(65536); for(let i=0;i<65536;i++){ let v=i/65535; if(invert) v=1-v; lut[i]=Math.round(255*Math.pow(v,1/gamma)); }
+  for(let y=0;y<H;y++){ const sy=Math.floor(y*L/H); for(let x=0;x<W;x++){ const sx=Math.floor(x*P/W), i=sy*P+sx, o=(y*W+x)*4; if(planes.length===1){ const v=lut[planes[0][i]]; d[o]=d[o+1]=d[o+2]=v; } else { d[o]=lut[planes[0][i]]; d[o+1]=lut[planes[1][i]]; d[o+2]=lut[planes[2][i]]; } d[o+3]=255; } }
+  ctx.putImageData(im,0,0);
+}
+function drawRawProgress(raw,gotBytes,g){
+  const v=$('view'), P=g.pixels, W=Math.min(P,1000), linesGot=Math.floor(gotBytes/g.lineBytes), H=Math.round(g.lincnt*W/P*g.dpi/(g.yres||g.dpi));
+  if(v.width!==W||v.height!==H){ v.width=W; v.height=H; }
+  const ctx=v.getContext('2d'); const rowsDone=Math.floor(linesGot*H/g.lincnt); const rows=rowsDone-(drawRawProgress.last||0); if(rows<=0) return;
+  const im=ctx.createImageData(W,rows); const d=im.data; const invert=$('previewInvert').checked;
+  for(let y=0;y<rows;y++){ const sy=Math.floor(((drawRawProgress.last||0)+y)*g.lincnt/H); for(let x=0;x<W;x++){ const sx=Math.floor(x*P/W), i=(sy*P+sx)*3, o=(y*W+x)*4; for(let c=0;c<3;c++){ let f=raw[i+c]/65535; if(invert) f=1-f; d[o+c]=Math.round(255*Math.pow(f,1/2.2)); } d[o+3]=255; } }
+  ctx.putImageData(im,0,drawRawProgress.last||0); drawRawProgress.last=rowsDone;
+}
+
+// ---------------------------------------------------------------- passes
+let result=null; // {g, planes:[R,G,B], ir:Uint16Array|null, meta}
+function crop(){ return {x:+$('cx').value,y:+$('cy').value,w:+$('cw').value,h:+$('ch').value}; }
+function addResult(title,planes,g,opts){ const f=document.createElement('figure'); const c=document.createElement('canvas'); drawPlanes(c,planes,g,{...opts,maxW:400}); const cap=document.createElement('figcaption'); cap.textContent=title; f.append(c,cap); $('results').prepend(f); }
+
+async function acquireWithPreview(g,opts,label){
+  drawRawProgress.last=0;
+  log(g.ir?'ir':'',`${label}: ${g.ir?'infrared':'colour'} pass, ${g.lines} lines at ${g.dpi} dpi`);
+  // Custom mode feeds as part of acquisition; recorded profiles use CaptureRuntime.
+  await configure(g,opts);
+  if(opts.lampOff){ await writeReg(0x03,shadow[0x03]&~0x10); setLamp(false); }
+  else if(g.ir){ await setIR(true); setLamp('ir'); } else setLamp(true);
+  await writeReg(0x0D,0x05); await writeReg(0x01,shadow[0x01]|0x01); await writeReg(0x0F,1);
+  let raw;
+  try{
+    if(!opts.motorOff){ const t=performance.now(); while((await readFeed())<scanCtx.feedl){ checkCancel(); if(performance.now()-t>60000) throw new Error('feed timeout'); await sleep(50);} }
+    const t=performance.now(); while(true){ checkCancel(); const s=await status(); if(!(s&0x40)&&(await validWords())>=1) break; if(performance.now()-t>30000) throw new Error('no scan data in 30 s'); await sleep(20);} 
+    const bytes=await bulkRead(g.totalBytes,(got,buf)=>{ progress(got/g.totalBytes,g.ir); if(opts.preview) drawRawProgress(new Uint16Array(buf.buffer),got,g); });
+    raw=new Uint16Array(bytes.buffer,0,g.totalBytes>>1);
+  } finally {
+    await stopMotor(); if(g.ir) await setIR(false); setLamp(!!(shadow[0x03]&0x10)&&!g.ir); progress(0);
+  }
+  return raw;
+}
+
+async function calibrate(){
+  if($('vendorProfile').checked) throw new Error('Capture mode uses the recorded hardware calibration. Disable capture mode for fresh host calibration.');
+  const dpi=num('dpi'); const lpC=lpColour(dpi);
+  const g=geometry(dpi,{x:0,y:0,w:36,h:2},false,lpC,0);   // at home, not through the film
+  g.lines=Math.max(8,Math.min(128,g.lines)); g.lincnt=g.lines+Math.max(g.shift.r,g.shift.g,g.shift.b); g.lincntReg=g.lincnt*(1+g.linesel); g.totalBytes=g.lineBytes*g.lincnt;
+  await home();
+  const dark=decode(await acquireWithPreview(g,{motorOff:true,lampOff:true},'dark frame'),g);
+  await warmup();
+  const white=decode(await acquireWithPreview(g,{motorOff:false,lampOff:false},'white frame'),g);
+  const P=g.pixels; const darkAvg=[],gain=[];
+  for(let c=0;c<3;c++){ const d=new Float32Array(P), w=new Float32Array(P); for(let x=0;x<P;x++){ let sd=0,sw=0; for(let y=0;y<g.lines;y++){ sd+=dark[c][y*P+x]; sw+=white[c][y*P+x]; } d[x]=sd/g.lines; w[x]=sw/g.lines; } const gn=new Float32Array(P); for(let x=0;x<P;x++){ const span=w[x]-d[x]; gn[x]=span>200?60000/span:1; } darkAvg.push([...d]); gain.push([...gn]); }
+  calib={dpi,pixels:P,str:g.str,dark:darkAvg,gain,when:new Date().toISOString()}; localStorageSet('calib',JSON.stringify(calib));
+  const mean=c=>(darkAvg[c].reduce((a,b)=>a+b,0)/P).toFixed(0);
+  log('ok',`calibration stored for ${dpi} dpi: dark mean R${mean(0)} G${mean(1)} B${mean(2)}, gain median ${median(gain[1]).toFixed(3)}`);
+  addResult('white frame '+dpi,white,g,{}); addResult('dark frame '+dpi,dark,g,{gamma:1});
+  done('bCal'); enable(['bPre','bScan']); $('hint').textContent='Prescan to frame the slide, then scan.';
+}
+function median(a){ const s=[...a].sort((x,y)=>x-y); return s[s.length>>1]; }
+async function warmup(){ const s=num('warm'); if(!s) return; const v=(shadow[0x03]??0x1F)|0x10; await writeReg(0x03,v); setLamp(true); log('',`lamp warm-up ${s} s`); for(let i=0;i<s*10;i++){ checkCancel(); await sleep(100);} }
+
+async function prescan(){
+  if($('vendorProfile').checked) return capturedScan('prescan');
+  const g=geometry(900,{x:0,y:0,w:36,h:24},false,lpColour(900));
+  await home(); await warmup();
+  const raw=await acquireWithPreview(g,{preview:true},'prescan');
+  const planes=applyCal(decode(raw,g),g);
+  result={g,planes,ir:null,raw:{bytes:new Uint8Array(raw.buffer,raw.byteOffset,raw.byteLength),g,pass:'prescan RGB',hardwareShading:false},meta:{kind:'prescan'}};
+  drawPlanes($('view'),planes,g,{invert:$('previewInvert').checked});
+  showCropBox(); done('bPre'); enable(['bRawTiff','bTiff','bPng']); $('hint').textContent='Drag on the image to set the crop, then scan.';
+  addResult('prescan 900 dpi',planes,g,{invert:$('previewInvert').checked});
+  await home();
+}
+
+async function scan(){
+  if($('vendorProfile').checked) return capturedScan('full');
+  const dpi=num('dpi'), cr=crop(), lpC=lpColour(dpi), lpI=parseInt($('lpI').value);
+  const k=num('mexp'), ns=num('msamp'), motorOff=$('motorOff').checked;
+  const g=geometry(dpi,cr,false,lpC);
+  if(g.totalBytes>900e6) throw new Error(`frame is ${(g.totalBytes/1e6).toFixed(0)} MB; reduce the crop or resolution`);
+  await home(); await warmup();
+  const regLog=[];
+  const acc=[new Float64Array(g.pixels*g.lines),new Float64Array(g.pixels*g.lines),new Float64Array(g.pixels*g.lines)];
+  let irAcc=null,rawExport=null;
+  for(let s=0;s<ns;s++){
+    const baseRaw=await acquireWithPreview(g,{motorOff,preview:true},`sample ${s+1}/${ns}`);
+    if(s===0)rawExport={bytes:new Uint8Array(baseRaw.buffer,baseRaw.byteOffset,baseRaw.byteLength),g,pass:'first normal-exposure RGB pass',hardwareShading:false};
+    const base=applyCal(decode(baseRaw,g),g);
+    let merged=base;
+    if(k>1){
+      await home();
+      const gl=geometry(dpi,cr,false,lpC*k);
+      let long=applyCal(decode(await acquireWithPreview(gl,{motorOff,preview:true},`sample ${s+1}/${ns} long ×${k}`),gl),gl);
+      const reg=registerPasses(base[1],long[1],g,`sample ${s+1} registration`);
+      regLog.push(reg);
+      if($('autoAlign').checked&&!reg.unreliable&&(reg.dy||reg.dx)&&reg.confidence>0.02){
+        long=long.map(pl=>shiftPlane(pl,g,reg.dy,reg.dx));
+        log('','realigned the long pass before merging');
+      }
+      merged=base.map((pl,c)=>{ const o=new Uint16Array(pl.length);
+        for(let i=0;i<pl.length;i++){
+          const sh=pl[i], lg=long[c][i]/k;
+          // Smoothstep crossfade: the long exposure carries the shadows (better SNR there),
+          // the short one the highlights (the long pass clips). A linear ramp leaves a visible
+          // seam at the join; smoothstep has zero derivative at both ends.
+          let t=(sh-MERGE_LO)/(MERGE_HI-MERGE_LO); t=Math.min(1,Math.max(0,t));
+          let w=t*t*(3-2*t);
+          // Long-pass pixels at or near clipping carry no information; force the short one.
+          if(long[c][i]>=CLIP) w=1;
+          o[i]=Math.round(w*sh+(1-w)*lg);
+        } return o; });
+      addResult(`long ×${k} sample ${s+1}`,long,gl,{invert:$('previewInvert').checked});
+    }
+    for(let c=0;c<3;c++) for(let i=0;i<acc[c].length;i++) acc[c][i]+=merged[c][i];
+    if($('doIR').checked){
+      await home();
+      const gi=geometry(dpi,cr,true,lpI);
+      let irp=applyCal(decode(await acquireWithPreview(gi,{motorOff,preview:true},`sample ${s+1}/${ns} infrared`),gi),gi)[1];
+      const rir=registerPasses(merged[1],irp,g,`sample ${s+1} IR registration`);
+      regLog.push(rir);
+      if($('autoAlign').checked&&!rir.unreliable&&(rir.dy||rir.dx)&&rir.confidence>0.02) irp=shiftPlane(irp,g,rir.dy,rir.dx);
+      if(!irAcc) irAcc=new Float64Array(irp.length); for(let i=0;i<irp.length;i++) irAcc[i]+=irp[i];
+      addResult(`infrared sample ${s+1}`,[irp],gi,{});
+    }
+    if(s<ns-1) await home();
+  }
+  const planes=acc.map(a=>{ const o=new Uint16Array(a.length); for(let i=0;i<a.length;i++) o[i]=Math.round(a[i]/ns); return o; });
+  const ir=irAcc?(()=>{ const o=new Uint16Array(irAcc.length); for(let i=0;i<o.length;i++) o[i]=Math.round(irAcc[i]/ns); return o; })():null;
+  let outG=g, outPlanes=planes, outIr=ir;
+  if(g.yMul>1&&$('vAvg').checked){
+    // Average line pairs: 3600x7200 -> 3600x3600 square pixels, with ~sqrt(2) better SNR per line.
+    const P=g.pixels, L2=Math.floor(g.lines/g.yMul);
+    const down=pl=>{ const o=new Uint16Array(P*L2); for(let y=0;y<L2;y++){ for(let x=0;x<P;x++){ let acc=0; for(let k2=0;k2<g.yMul;k2++) acc+=pl[(y*g.yMul+k2)*P+x]; o[y*P+x]=Math.round(acc/g.yMul); } } return o; };
+    outPlanes=planes.map(down); outIr=ir?down(ir):null; outG={...g,lines:L2,yres:g.dpi};
+    log('',`averaged ${g.yMul}× vertical oversampling: ${g.pixels}×${g.lines} → ${g.pixels}×${L2} at ${g.dpi}×${g.dpi} dpi`);
+  }
+  result={g:outG,planes:outPlanes,ir:outIr,raw:rawExport,meta:{kind:'scan',scanYres:g.yres,profile:g.vendor?'vendor capture (scanneroutput_1)':'SANE-derived',film:$('film').value,multiExposure:k,multiSampling:ns,afe:{offset:[num('o1'),num('o2'),num('o3')],gain:[num('g1'),num('g2'),num('g3')]},calibration:calib?calib.when:null,lperiod:{colour:lpC,ir:lpI},registration:regLog,irGpio:{reg:$('irReg').value,mask:$('irMask').value}}};
+  drawPlanes($('view'),outPlanes,outG,{invert:$('previewInvert').checked}); $('cropBox').hidden=true;
+  addResult(`frame ${dpi} dpi RGB`+(outIr?'+IR':''),outPlanes,outG,{invert:$('previewInvert').checked});
+  done('bScan'); enable(['bRawTiff','bTiff','bPng']); $('hint').textContent=`Frame done: ${outG.pixels} × ${outG.lines}${outIr?', IR plane attached':''}. Save the TIFF.`;
+  log('ok',`frame complete ${outG.pixels}×${outG.lines} at ${outG.dpi}×${outG.yres} dpi, ${ns} sample(s), multi-exposure ×${k}, IR ${ir?'yes':'no'}`);
+  await home();
+}
+
+// ---------------------------------------------------------------- crop box on prescan
+function showCropBox(){ if(result?.g.captured){$('cropBox').hidden=true;return;} const v=$('view'), b=$('cropBox'); const r=v.getBoundingClientRect(), p=$('viewer').getBoundingClientRect(); const c=crop(); b.hidden=false; b.style.left=(r.left-p.left+c.x/TA.w*r.width)+'px'; b.style.top=(r.top-p.top+c.y/TA.h*r.height)+'px'; b.style.width=(c.w/TA.w*r.width)+'px'; b.style.height=(c.h/TA.h*r.height)+'px'; }
+(()=>{ const v=$('view'); let s=null; const toMM=e=>{ const r=v.getBoundingClientRect(); return {x:Math.max(0,Math.min(TA.w,(e.clientX-r.left)/r.width*TA.w)),y:Math.max(0,Math.min(TA.h,(e.clientY-r.top)/r.height*TA.h))}; };
+ v.addEventListener('pointerdown',e=>{ if(!result||result.g.captured||result.meta.kind!=='prescan') return; s=toMM(e); v.setPointerCapture(e.pointerId); });
+ v.addEventListener('pointermove',e=>{ if(!s) return; const m=toMM(e); $('cx').value=Math.min(s.x,m.x).toFixed(1); $('cy').value=Math.min(s.y,m.y).toFixed(1); $('cw').value=Math.max(1,Math.abs(m.x-s.x)).toFixed(1); $('ch').value=Math.max(1,Math.abs(m.y-s.y)).toFixed(1); showCropBox(); });
+ v.addEventListener('pointerup',()=>{ s=null; });
+ ['cx','cy','cw','ch'].forEach(i=>$(i).addEventListener('input',()=>{ if(!$('cropBox').hidden) showCropBox(); }));
+ window.addEventListener('resize',()=>{ if(!$('cropBox').hidden) showCropBox(); });
+})();
+
+// ---------------------------------------------------------------- TIFF export
+function tiff(planes,ir,w,h,xdpi=0,ydpi=0,rawBytes=null){
+  const spp=ir?4:3, le=true, bps=16;
+  const rowBytes=w*spp*2, dataBytes=rowBytes*h;
+  if(!Number.isSafeInteger(dataBytes)||w<=0||h<=0||dataBytes>0xffffffff-1024)throw new Error('Invalid or oversized TIFF dimensions');
+  if(rawBytes&&(ir||rawBytes.byteLength!==dataBytes))throw new Error('Raw TIFF requires a complete interleaved RGB16 frame');
+  const entries=[[256,4,1,w],[257,4,1,h],[258,3,spp,null],[259,3,1,1],[262,3,1,2],[273,4,1,null],[274,3,1,1],[277,3,1,spp],[278,4,1,h],[279,4,1,dataBytes]];
+  if(xdpi&&ydpi) entries.push([282,5,1,'x'],[283,5,1,'y']);
+  entries.push([284,3,1,1]);
+  if(xdpi&&ydpi) entries.push([296,3,1,2]);           // ResolutionUnit: inch
+  if(ir) entries.push([338,3,1,0]); // ExtraSamples: unspecified data; infrared is not alpha.
+  const nEntries=entries.length, ifdSize=2+nEntries*12+4, bpsOff=8+ifdSize;
+  const ratOff=bpsOff+spp*2+(spp*2)%4, dataOff=ratOff+16;
+  const buf=new ArrayBuffer(dataOff+dataBytes), dv=new DataView(buf);
+  dv.setUint16(0,0x4949,le); dv.setUint16(2,42,le); dv.setUint32(4,8,le);
+  dv.setUint16(8,nEntries,le); let o=10;
+  for(const [tag,type,count,val] of entries){ dv.setUint16(o,tag,le); dv.setUint16(o+2,type,le); dv.setUint32(o+4,count,le);
+    if(tag===258){ dv.setUint32(o+8,bpsOff,le); } else if(tag===282||tag===283){ dv.setUint32(o+8,ratOff+(tag===283?8:0),le); } else if(tag===273){ dv.setUint32(o+8,dataOff,le); } else if(type===3){ dv.setUint16(o+8,val,le); } else dv.setUint32(o+8,val,le); o+=12; }
+  dv.setUint32(o,0,le);
+  for(let i=0;i<spp;i++) dv.setUint16(bpsOff+i*2,bps,le);
+  dv.setUint32(ratOff,xdpi||1,le); dv.setUint32(ratOff+4,1,le); dv.setUint32(ratOff+8,ydpi||1,le); dv.setUint32(ratOff+12,1,le);
+  if(rawBytes){new Uint8Array(buf,dataOff,dataBytes).set(rawBytes);return buf;}
+  const px=new Uint16Array(buf,dataOff,w*h*spp);
+  for(let i=0;i<w*h;i++){ px[i*spp]=planes[0][i]; px[i*spp+1]=planes[1][i]; px[i*spp+2]=planes[2][i]; if(ir) px[i*spp+3]=ir[i]; }
+  return buf;
+}
+function rawTiffPayload(scan){
+  if(!scan?.raw)throw new Error('No raw acquisition is available');
+  const {bytes,g,pass,hardwareShading}=scan.raw;
+  const metadata={exportType:'raw-usb-rgb16',width:g.pixels,height:g.lincnt,xDpi:g.dpi,yDpi:g.yres||g.dpi,
+    bitsPerSample:16,samples:'RGB',byteOrder:'little-endian',layout:'interleaved',pass,
+    transforms:{inversion:false,hostCalibration:false,channelAlignment:false,staggerCorrection:false,
+      cropping:false,verticalAveraging:false,exposureMerge:false,sampleAveraging:false,contrastStretch:false,gamma:false,rotation:false},
+    hardwareShadingApplied:!!hardwareShading,
+    sourceCapture:scan.meta.capture||null,sourceCaptureSha256:scan.meta.captureSha256||null,
+    programmedRegisters:scan.meta.frameRegisters||null,
+    recommendedAlignment:g.shift,calibration:hardwareShading?'Recorded scanner hardware shading already applied before USB transfer':'No hardware shading; raw is before host calibration'};
+  return {buffer:tiff(null,null,g.pixels,g.lincnt,g.dpi,g.yres||g.dpi,bytes),metadata};
+}
+function saveRawTiff(){
+  if(!result?.raw)return;
+  const {buffer,metadata}=rawTiffPayload(result),stamp=new Date().toISOString().replace(/[:.]/g,'-');
+  const name=`opticfilm7600i_raw_${metadata.xDpi}dpi_${stamp}`;
+  download(name+'.tiff',new Blob([buffer],{type:'image/tiff'}));
+  download(name+'.json',new Blob([JSON.stringify(metadata,null,2)],{type:'application/json'}));
+  log('ok',`saved uninverted raw TIFF: ${metadata.width}×${metadata.height}, all received RGB samples`);
+}
+function download(name,blob){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000); }
+function saveTiff(){
+  if(!result) return; const {g,planes,ir,meta}=result; const stamp=new Date().toISOString().replace(/[:.]/g,'-');
+  const name=`opticfilm7600i_aligned_${g.dpi}dpi_${stamp}`;
+  download(name+'.tiff',new Blob([tiff(planes,ir,g.pixels,g.lines,g.dpi,g.yres||g.dpi)],{type:'image/tiff'}));
+  const side={exportType:'aligned-or-processed-rgb16',exportTransforms:{inverted:false,previewLevelsApplied:false,previewGammaApplied:false,rotated:false},previewOnly:{inverted:$('previewInvert').checked,upright:g.captured&&$('upright').checked},device:'Plustek OpticFilm 7600i (07b3:0c3b, GL843)',driver:'opticfilm-scan.html',width:g.pixels,height:g.lines,dpi:g.dpi,yDpi:g.yres||g.dpi,samples:ir?'RGBI':'RGB',bitsPerSample:16,crop_mm:g.captured?null:crop(),lineShift:g.shift,stagger:g.stagger,...meta,traceHash:hashTrace(),variant:variant.name,gpioId:hex(variant.gpioId),tables:g.captured?'Exact supplied USB capture payloads, including recorded shading calibration':'SANE-derived custom profile'};
+  download(name+'.json',new Blob([JSON.stringify(side,null,2)],{type:'application/json'}));
+  log('ok','saved '+name+'.tiff and sidecar');
+}
+function hashTrace(){ let h=2166136261; const s=JSON.stringify(trace); for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); } return (h>>>0).toString(16); }
+
+// ---------------------------------------------------------------- capture-matched acquisitions
+function syncProfileUI(){
+  const capture=$('vendorProfile').checked;
+  for(const id of ['dpi','cx','cy','cw','ch','doIR','mexp','msamp','applyCal','autoAlign','vAvg','motorOff','g1','g2','g3','o1','o2','o3','lpC','lpI','dummy','xpasel','speedWord','hdr2','irReg','irMask']) $(id).disabled=capture;
+  if(capture)$('bCal').disabled=true;
+  else if(dev&&!$('bPre').disabled)$('bCal').disabled=false;
+  $('bPre').querySelector('span').textContent=capture?'Prescan (1440 × 2880 dpi)':'Prescan at 900 dpi';
+  $('frameNote').textContent=capture?'Fixed recorded frames and hardware calibration for this v1 scanner. Full scan is 3600 × 7200 dpi on the wire. Custom crop, IR and exposure controls are disabled.':'Drag on the prescan to set a custom crop in the 36 × 24 mm transparency window. This mode is SANE-derived, not capture-matched.';
+}
+function drawCaptured(canvas,planes,g,opts={}){
+  const source=document.createElement('canvas'); source.width=g.pixels;source.height=g.lines;
+  const ctx=source.getContext('2d');const im=ctx.createImageData(g.pixels,g.lines);
+  im.data.set(CaptureRuntime.renderRGB(planes,g,!!opts.invert));ctx.putImageData(im,0,0);
+  const squareH=Math.floor(g.lines*g.dpi/g.yres), upright=$('upright').checked;
+  const nativeW=upright?squareH:g.pixels,nativeH=upright?g.pixels:squareH;
+  const scale=Math.min(1,(opts.maxW||1400)/nativeW);
+  canvas.width=Math.max(1,Math.round(nativeW*scale));canvas.height=Math.max(1,Math.round(nativeH*scale));
+  const dst=canvas.getContext('2d');dst.imageSmoothingEnabled=true;dst.imageSmoothingQuality='high';
+  if(upright){dst.translate(0,canvas.height);dst.rotate(-Math.PI/2);dst.drawImage(source,0,0,canvas.height,canvas.width);}
+  else dst.drawImage(source,0,0,canvas.width,canvas.height);
+}
+async function capturedScan(key){
+  if(variant!==VARIANTS.v1)throw new Error('These captures are for GL843 v1 only. Disable capture mode for other hardware.');
+  if(fake||dev.backend==='simulated')throw new Error('Captured acquisition requires the scanner. Use tools/reconstruct_capture.py to reconstruct a capture offline; use custom mode for synthetic dry runs.');
+  const p=CAPTURE_PROFILES[key];
+  log('',p.name+': replaying recorded AFE and shading calibration for this unit; no new calibration coefficients are computed.');
+  await home(); await warmup();
+  const io={
+    async control(op){
+      const setup={requestType:'vendor',recipient:'device',request:op.request,value:op.value,index:op.index};
+      if(op.rt===0x40){
+        const bytes=Uint8Array.from(op.data);const r=await dev.controlTransferOut(setup,bytes);
+        if(r.status!=='ok'||(r.bytesWritten!==undefined&&r.bytesWritten!==bytes.length))throw new Error('Captured control write failed');
+        if(op.value===0x83&&bytes.length>1)for(let i=0;i<bytes.length;i+=2)shadow[bytes[i]]=bytes[i+1];
+        rec({dir:'out',req:op.request,value:op.value,index:op.index,data:op.data});return;
+      }
+      const r=await dev.controlTransferIn(setup,op.length);if(r.status!=='ok')throw new Error('Captured control read failed');
+      const bytes=new Uint8Array(r.data.buffer,r.data.byteOffset,r.data.byteLength);
+      rec({dir:'in',req:op.request,value:op.value,index:op.index,data:[...bytes]});return bytes;
+    },
+    async write(bytes){const r=await dev.transferOut(epOut,bytes);if(r.status!=='ok'||(r.bytesWritten!==undefined&&r.bytesWritten!==bytes.length))throw new Error('Captured table upload failed');rec({dir:'bulkout',len:bytes.length});},
+    async read(n){const r=await dev.transferIn(epIn,n);if(r.status!=='ok')throw new Error('Captured bulk read failed');return new Uint8Array(r.data.buffer,r.data.byteOffset,r.data.byteLength);}
+  };
+  let bytes;
+  try{
+    bytes=await CaptureRuntime.run(p,io,{check:checkCancel,log:m=>log('io',m),sleep:async ms=>{for(let left=ms;left>0;left-=50){checkCancel();await sleep(Math.min(left,50));}},progress:(frame,got,total)=>{if(frame===p.mainFrame)progress(got/total,false);}});
+    // The captures end during/just after automatic return; wait for physical home.
+    const deadline=performance.now()+60000;
+    while(!((await status())&0x08)){checkCancel();if(performance.now()>deadline)throw new Error('Automatic return did not reach home');await sleep(100);}
+  }catch(e){await stopMotor();throw e;}finally{progress(0);}
+  // Colour registration: measure the R->G and R->B line delays in this scan (sub-line), falling
+  // back to the recorded integer delays when the frame has too little vertical detail.
+  const align=CaptureRuntime.measureShifts(bytes,p), g=CaptureRuntime.geometry(p,align.shifts);
+  log(align.used.every(u=>u!=='nominal (low confidence)')?'':'w',`channel alignment R/G/B = ${align.shifts.join(' / ')} lines (G ${align.used[1]}, r=${align.confidence[1]}; B ${align.used[2]}, r=${align.confidence[2]}; recorded ${p.shifts.join('/')})`);
+  const planes=CaptureRuntime.decode(bytes,g);
+  result={g,planes,ir:null,raw:{bytes,g,pass:p.name+' main RGB acquisition',hardwareShading:true},meta:{kind:key==='prescan'?'prescan':'scan',profile:p.name,capture:p.source,captureSha256:p.sha256,
+    calibration:'recorded AFE and hardware shading tables; no host correction',film:$('film').value,
+    reconstruction:{channelShifts:align.shifts,channelShiftSource:align.used,channelShiftConfidence:align.confidence,recordedChannelShifts:p.shifts,interpolation:'linear between bracketing lines',percentiles:[.5,99.5],inset:150,gamma:1,aspect:[p.dpi,p.yres]},
+    frameRegisters:p.frames[p.mainFrame].regs,moves:p.moves}};
+  drawPlanes($('view'),planes,g,{invert:$('previewInvert').checked});$('cropBox').hidden=true;
+  addResult(p.name,planes,g,{invert:$('previewInvert').checked});
+  enable(['bRawTiff','bTiff','bPng']);done(key==='prescan'?'bPre':'bScan');
+  $('hint').textContent=`${p.name}: ${g.pixels} × ${g.lines} aligned samples. Raw TIFF preserves every received sample; aligned TIFF saves aligned channels; PNG saves the preview.`;
+  log('ok',`${p.name} complete: ${g.pixels}×${g.lincnt} acquired; ${g.pixels}×${g.lines} after channel alignment.`);
+}
+function savePng(){
+  if(!result)return;
+  const c=document.createElement('canvas');drawPlanes(c,result.planes,result.g,{invert:$('previewInvert').checked,maxW:100000});
+  c.toBlob(b=>{if(b)download(`opticfilm-${result.meta.kind}-${result.g.dpi}dpi.png`,b);},'image/png');
+}
+
+// ---------------------------------------------------------------- wiring
+function guard(fn){ return async()=>{ if(operationActive)return;operationActive=true;$('vendorProfile').disabled=true; cancelFlag=false; const bs=[...document.querySelectorAll('button')].filter(b=>!b.disabled&&b.id!=='bStop'); bs.forEach(b=>b.disabled=true); try{ await fn(); }catch(e){ if(e instanceof Cancelled) log('w','cancelled; carriage stopped'); else { log('err',e.message); console.error(e);} try{ if(dev){await stopMotor();if(e instanceof Cancelled){cancelFlag=false;await home();}} }catch(_){} setLamp(false); progress(0);} finally{ operationActive=false;$('vendorProfile').disabled=false;bs.forEach(b=>b.disabled=false); syncProfileUI();} }; }
+$('variant').onchange=()=>{ if(dev) selectVariant(`${dev.deviceVersionMajor}.${dev.deviceVersionMinor}${dev.deviceVersionSubminor}`); };
+$('bConnect').onclick=guard(()=>connect(false));
+$('bFake').onclick=guard(()=>connect(true));
+$('bBoot').onclick=guard(boot);
+$('bHome').onclick=guard(async()=>{ await home(); done('bHome'); enable(['bCal','bPre','bScan']); $('hint').textContent='Calibrate (recommended) or prescan.'; });
+$('bCal').onclick=guard(calibrate);
+$('bPre').onclick=guard(prescan);
+$('bScan').onclick=guard(scan);
+$('bStop').onclick=()=>{if(!operationActive)return guard(async()=>{await stopMotor();await home();})();cancelFlag=true;log('w','stop requested; parking after the in-flight transfer returns');};
+$('bLamp').onclick=guard(async()=>{ const v=await readReg(0x03); const on=!(v&0x10); await writeReg(0x03,on?(v|0x10):(v&~0x10)); setLamp(on); showStatus(await status()); });
+$('bRegs').onclick=guard(async()=>{ const rows=[]; for(let r=0;r<0xC0;r++){ const v=await readReg(r); rows.push(hex(r)+'='+hex(v)); } log('io',rows.join(' ')); });
+$('bRawTiff').onclick=saveRawTiff;
+$('bTiff').onclick=saveTiff;
+$('bPng').onclick=savePng;
+$('vendorProfile').onchange=syncProfileUI;
+const refreshPreview=()=>{if(result)drawPlanes($('view'),result.planes,result.g,{invert:$('previewInvert').checked});};
+$('upright').onchange=$('previewInvert').onchange=refreshPreview;
+$('film').onchange=()=>{$('previewInvert').checked=$('film').value==='neg';refreshPreview();};
+$('bTrace').onclick=()=>download('opticfilm-trace-'+Date.now()+'.json',new Blob([JSON.stringify({device:'07b3:0c3b',bcdDevice:dev?`${dev.deviceVersionMajor}.${dev.deviceVersionMinor}${dev.deviceVersionSubminor}`:null,fake,variant:variant.name,trace},null,1)],{type:'application/json'}));
+$('bForget').onclick=()=>{ calib=null; try{localStorage.removeItem('calib');}catch(e){} log('','calibration forgotten'); };
+syncProfileUI();
+if(calib) log('',`calibration from ${calib.when} loaded for ${calib.dpi} dpi`);
+log('','Ready. Steps run in order; every motor wait has a hard timeout and Stop parks the carriage.');
+</script>
+</body>
+</html>
