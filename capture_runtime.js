@@ -148,14 +148,26 @@
         // use large transfers to cover the round-trip latency, and give up early if the rate is short.
         const main=op.frame===profile.mainFrame, need=main&&profile.scan?profile.scan.bytesPerSecond:0;
         const chunk=hooks.readChunk||CHUNK;
-        let pending=io.read(Math.min(chunk,remaining)), started=0, sinceStart=0;
+        // Request whole 512-byte packets and read any remainder on its own, as the vendor driver
+        // does (62268 = 61952 + 316). A read that ends mid-packet while the scanner still has
+        // more to send meets a full packet it has no room for (Linux reports EOVERFLOW).
+        let unrequested=op.length;
+        const request=()=>{
+          const whole=Math.min(chunk,unrequested), n=whole>=PACKET?whole-whole%PACKET:whole, at=op.length-unrequested;
+          unrequested-=n;
+          const r=io.read(n).then(part=>({part,n}),e=>{ throw new Error(`frame ${op.frame}: bulk read of ${n} bytes at byte ${at} of ${op.length} failed: ${e.message}`); });
+          r.catch(()=>{});   // awaited below; this only stops an early exit reporting it as unhandled
+          return r;
+        };
+        let pending=request(), started=0, sinceStart=0;
         while(remaining){
           check();
-          const part=await pending;
-          assert(part&&part.length>0&&part.length<=chunk,'Invalid/empty bulk read');
+          const {part,n}=await pending;
+          assert(part&&part.length>0,`frame ${op.frame}: empty bulk read (asked for ${n} bytes)`);
+          assert(part.length<=n,`frame ${op.frame}: bulk read returned ${part.length} of ${n} bytes`);
           assert(state.got+part.length<=f.bytes,'Frame exceeds captured header');
-          remaining-=part.length;
-          if(remaining)pending=io.read(Math.min(chunk,remaining));   // next transfer starts now
+          remaining-=part.length; unrequested+=n-part.length;   // a short read is asked for again
+          if(unrequested)pending=request();   // next transfer starts now
           if(state.data)state.data.set(part,state.got);
           state.got+=part.length;
           if(started){ sinceStart+=part.length;
@@ -311,7 +323,7 @@
   // the 128-line white frame (flicker) may be at most 0.6 % (official: 0.02-0.24 %).
   // 256 KB per bulk transfer (the helper allows 1 MB); big enough to hide round-trip latency,
   // small enough for a smooth progress bar and for usbfs/WinUSB to handle comfortably.
-  const CHUNK=0x40000, THROUGHPUT_GRACE_S=6, THROUGHPUT_MIN=0.9;
+  const CHUNK=0x40000, PACKET=512, THROUGHPUT_GRACE_S=6, THROUGHPUT_MIN=0.9;
   const LAMP_LIMITS={levelPct:10,balancePct:5,flickerPct:0.6,darkCounts:40};
   // Black level: the sequence replays the vendor's per-channel AFE offsets, which were calibrated
   // for the vendor's unit in that session (prescan 30/47/23, full 32/49/29). If this scanner's dark

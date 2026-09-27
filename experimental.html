@@ -306,7 +306,7 @@ async function bulkRead(total,onChunk){
     if(perChunk){ if($('speedWord').checked) await write8c(0x0F,2); await header(n); }
     let need=n;
     while(need>0){
-      const r=await dev.transferIn(epIn,Math.min(need,0x10000));
+      const want=Math.min(need,0x10000), r=await dev.transferIn(epIn,want>=512?want-want%512:want);   // whole 512-byte packets, remainder on its own (vendor pattern; avoids Linux EOVERFLOW)
       if(r.status!=='ok'||!r.data.byteLength) throw new Error('bulk read failed/empty');
       out.set(new Uint8Array(r.data.buffer,r.data.byteOffset,r.data.byteLength),got);
       got+=r.data.byteLength; need-=r.data.byteLength;
