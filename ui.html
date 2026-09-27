@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpticFilm 7600i — roll scanner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#1b1f24; --panel:#23282e; --panel2:#2a3038; --line:#353c45;
+  --ink:#e9e5dd; --ink2:#a8aeb6; --dim:#6f767f;
+  --amber:#f0a832; --amber2:#7a5416; --ir:#c98bff; --ok:#7fd39a; --bad:#ff7a6e;
+}
+:root:not([data-theme="light"]) { color-scheme: dark; }
+:root[data-theme="dark"]{ color-scheme: dark; }
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 "Instrument Sans",system-ui,sans-serif}
+body{min-height:100vh}
+header{display:flex;align-items:baseline;gap:18px;padding:18px 22px 10px;border-bottom:1px solid var(--line)}
+header h1{font-size:19px;font-weight:600;margin:0;letter-spacing:.01em}
+header .dev{color:var(--ink2);font-family:"JetBrains Mono",monospace;font-size:12px}
+header .dev b{color:var(--amber);font-weight:500}
+main{display:grid;grid-template-columns:380px 1fr;gap:0;min-height:calc(100vh - 56px)}
+@media (max-width:900px){main{grid-template-columns:1fr}}
+aside{border-right:1px solid var(--line);padding:16px 18px 40px;overflow:auto}
+@media (max-width:900px){aside{border-right:0;border-bottom:1px solid var(--line)}}
+section{margin:0 0 22px}
+section h2{font-size:13px;font-weight:600;color:var(--ink2);margin:0 0 8px;letter-spacing:.02em}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+label{color:var(--ink2);font-size:13px}
+select,input[type=number],input[type=text]{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;font-size:14px;min-width:0}
+input[type=number]{width:86px}
+input[type=checkbox]{accent-color:var(--amber)}
+button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:7px 12px;font:inherit;font-weight:500;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--ink2)}
+button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+button:disabled{opacity:.45;cursor:default}
+button.primary{background:var(--amber);color:#1a1207;border-color:var(--amber)}
+button.danger{border-color:var(--bad);color:var(--bad)}
+.stack{display:grid;gap:6px}
+.stack button{width:100%;text-align:left;display:flex;justify-content:space-between}
+.stack button span.state{color:var(--dim);font-family:"JetBrains Mono",monospace;font-size:12px}
+.stack button.done span.state{color:var(--ok)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;font-family:"JetBrains Mono",monospace;font-size:12px}
+.chips span{border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--dim)}
+.chips span.on{color:var(--amber);border-color:var(--amber2)}
+.stage{display:flex;flex-direction:column;min-height:0}
+.viewer{position:relative;flex:1;display:flex;align-items:center;justify-content:center;background:#0f1215;min-height:320px;padding:14px}
+.viewer canvas{max-width:100%;max-height:70vh;image-rendering:auto;background:#000;box-shadow:0 0 0 1px #2c323a}
+.viewer .crop{position:absolute;border:1.5px dashed var(--amber);pointer-events:none;box-shadow:0 0 0 9999px rgba(0,0,0,.35)}
+.viewer .hint{position:absolute;left:18px;bottom:12px;color:var(--dim);font-size:13px}
+.viewer .lamp{position:absolute;right:18px;top:12px;font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--dim)}
+.viewer .lamp.on{color:var(--amber)}.viewer .lamp.ir{color:var(--ir)}
+.progress{height:3px;background:var(--line)}
+.progress i{display:block;height:100%;width:0;background:var(--amber);transition:width .15s}
+.progress.ir i{background:var(--ir)}
+.log{font-family:"JetBrains Mono",monospace;font-size:12px;line-height:1.5;height:220px;overflow:auto;padding:10px 16px;border-top:1px solid var(--line);background:var(--panel)}
+.log .err{color:var(--bad)}.log .ok{color:var(--ok)}.log .io{color:var(--dim)}.log .ir{color:var(--ir)}
+.log .w{color:var(--amber)}
+.tabs{display:flex;gap:2px;border-top:1px solid var(--line)}
+.tabs button{border:0;border-radius:0;background:transparent;color:var(--dim);padding:8px 14px}
+.tabs button.active{color:var(--ink);box-shadow:inset 0 -2px 0 var(--amber)}
+.results{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;padding:12px 16px;border-top:1px solid var(--line)}
+.results figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.results canvas{width:100%;display:block;background:#000}
+.results figcaption{padding:6px 8px;font-size:12px;color:var(--ink2)}
+.small{font-size:12px;color:var(--dim)}
+details summary{cursor:pointer;color:var(--ink2);font-size:13px}
+kbd{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--amber)}
+
+.viewer img{max-width:100%;max-height:70vh;background:#000;box-shadow:0 0 0 1px #2c323a}
+.roll{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:10px;padding:12px 16px;border-top:1px solid var(--line);max-height:40vh;overflow:auto}
+.roll figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden;cursor:pointer}
+.roll figure.sel{border-color:var(--amber)}
+.roll figure.failed{border-color:var(--bad)}
+.roll img{width:100%;height:96px;display:block;background:#000;object-fit:contain}
+.roll figcaption{padding:5px 7px;font-size:12px;color:var(--ink2);font-family:"JetBrains Mono",monospace}
+.roll figcaption b{color:var(--ink);font-weight:500;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.roll .empty{grid-column:1/-1;color:var(--dim);font-size:13px}
+.roll figure.missing{border-style:dashed;opacity:.55}
+.roll figure.missing figcaption i{color:var(--bad);font-style:normal;display:block}
+.roll .rollbar{grid-column:1/-1;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--ink2)}
+.roll .rollbar span{flex:1 1 200px}
+.next{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--amber);word-break:break-all}
+.big{font-size:16px;padding:11px 14px}
+.stack button kbd{font-family:"JetBrains Mono",monospace;font-size:12px;opacity:.75}
+.small{font-size:12px;color:var(--dim)}
+.status{font-size:13px;color:var(--ink2);margin:8px 0}
+.status.ok{color:var(--ok)}.status.err{color:var(--bad)}.status.busy{color:var(--amber)}
+.dry{color:#1a1207;background:var(--amber);border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600}
+details summary{cursor:pointer;color:var(--ink2);font-size:13px}
+.details{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--ink2);padding:8px 16px;border-top:1px solid var(--line);white-space:pre-wrap}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 16px;border-top:1px solid var(--line);background:var(--panel)}
+.controls .status{margin:0;flex:1 1 100%;order:10}
+.controls #bStop{margin-left:auto}
+.field{display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px;align-items:center;margin:7px 0}
+.field>label{line-height:1.25}
+.field .next{word-break:normal;overflow-wrap:anywhere;line-height:1.5}
+.btnpair{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 0}
+.btnpair button{padding:7px 8px}
+.controls button{white-space:nowrap}
+.controls>button,.controls>select,#pendingRow>button{height:46px}
+button.primary kbd{color:#1a1207;opacity:.6}
+.field select,.field input[type=text]{width:100%}
+.field .inline{display:flex;gap:6px;align-items:center;min-width:0}
+.field .inline>input[type=text]{flex:1;min-width:0}
+.field .inline>input[type=number]{width:90px}
+.field .inline>.small{white-space:nowrap}
+.check{display:flex;gap:8px;align-items:flex-start;margin:7px 0 7px 104px;line-height:1.3}
+.check input{margin:2px 0 0;flex:none}
+select.dpi{font-size:16px;font-weight:600;color:var(--amber);border-color:var(--amber2);background:var(--panel2);padding:11px 12px;line-height:1.45;cursor:pointer}
+select.dpi:hover{border-color:var(--amber)}
+.controls kbd{font-family:"JetBrains Mono",monospace;font-size:12px;opacity:.75}
+dialog#picker{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:0;width:min(640px,94vw)}
+dialog#picker::backdrop{background:rgba(0,0,0,.55)}
+.pk{padding:16px;display:grid;gap:10px}
+.pk h3{margin:0;font-size:15px;font-weight:600}
+.pkpath{display:flex;gap:6px}.pkpath input{flex:1;font-family:"JetBrains Mono",monospace;font-size:13px}
+.pkroots{display:flex;flex-wrap:wrap;gap:6px}.pkroots button{padding:3px 9px;font-size:12px}
+.pklist{height:300px;overflow:auto;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+.pklist button{display:block;width:100%;text-align:left;border:0;border-radius:0;background:transparent;padding:6px 10px;font-size:14px}
+.pklist button:hover,.pklist button:focus-visible{background:var(--panel2)}
+.pklist .none{color:var(--dim);padding:10px;font-size:13px}
+.pkbtns{display:flex;gap:8px;align-items:center}
+</style>
+</head>
+<body>
+<header>
+  <h1>OpticFilm 7600i roll scanner</h1>
+  <div class="dev" id="devline">no scanner connected</div>
+</header>
+<main>
+<aside>
+  <section>
+    <h2>Roll</h2>
+    <div class="field"><label for="prefix">Roll name</label><input type="text" id="prefix" spellcheck="false"></div>
+    <div class="field"><label for="outDir">Folder</label><div class="inline"><input type="text" id="outDir" spellcheck="false"><button id="bChoose">Choose…</button></div></div>
+    <div class="field"><label for="nextNo">Number</label><div class="inline"><input type="number" id="nextNo" min="0" max="999999"><select id="digits" aria-label="Number digits" style="width:auto"><option value="2">01</option><option value="3">001</option><option value="4">0001</option></select></div></div>
+    <div class="field"><span class="small">Next file</span><span class="next" id="nextName"></span></div>
+    <div class="field"><label for="film">Film</label>
+      <select id="film"><option value="neg">colour/B&amp;W negative</option><option value="pos">positive (slide)</option></select></div>
+    <div class="field"><label for="orient">Orientation</label>
+      <select id="orient"><option value="1">as scanned</option><option value="8">rotate 90° left</option><option value="6">rotate 90° right</option><option value="3">rotate 180°</option></select></div>
+    <label class="check"><input type="checkbox" id="mirror"> flip horizontally (mirror left–right)</label>
+    <div class="btnpair"><button id="bNextFree">Next free number</button><button id="bNewRoll">New roll…</button></div>
+  </section>
+
+
+  <section>
+    <details id="outPanel"><summary>Output options</summary>
+      <div class="field"><label for="tiffKind">TIFF</label>
+        <select id="tiffKind"><option value="aligned">aligned RGB 16-bit</option><option value="both">aligned + raw USB</option><option value="raw">raw USB only</option></select></div>
+      <label class="check"><input type="checkbox" id="saveJpeg"> also save a preview JPEG</label>
+      <div class="field"><label for="lampCheck">Illumination check</label>
+        <select id="lampCheck"><option value="warn">warn (recommended)</option><option value="wait">wait and retry</option><option value="off">off</option></select></div>
+      <label class="check"><input type="checkbox" id="blackLevel"> correct black level (recommended)</label>
+      <p class="small">Black-level correction uses the dark calibration frame. TIFFs hold the scanner's linear 16-bit data: not inverted or colour balanced, ready for a negative converter. Film type affects only the preview. Orientation is stored as the TIFF orientation tag.</p>
+    </details>
+  </section>
+
+  <section>
+    <details id="advPanel"><summary>Advanced</summary>
+      <div class="field"><label for="pixelSampling">Sensor pixels</label>
+        <select id="pixelSampling"><option value="deletion">deletion (default)</option><option value="average">averaging (experimental)</option></select></div>
+      <p class="small">Sensor averaging applies to calibration reads, framing and frame scans. It reduces horizontal sampling at 1440/3600 dpi; there is no reduction at 7200 dpi. Recorded shading remains in use, so live level checks compare against a deletion-mode reference. This is separate from output line-pair averaging.</p>
+      <div class="field"><label for="exposureMultiplier">Exposure</label>
+        <select id="exposureMultiplier"><option value="1">1× recorded (default)</option><option value="1.5">1.5× (staged, unavailable)</option><option value="2">2× (staged, unavailable)</option><option value="3">3× (staged, unavailable)</option><option value="4">4× (staged, unavailable)</option></select></div>
+      <p class="small" id="exposureNote">Longer exposure can be saved for later implementation. Scanning above 1× is blocked until fresh calibration and motor timing support are implemented.</p>
+      <div class="field"><label for="warm">LED warm-up</label><div class="inline"><input type="number" id="warm" min="0" max="120" step="1" style="width:70px"><span class="small">seconds (default 1)</span></div></div>
+      <p class="small">Warm-up applies only when the LED has been off.</p>
+      <label class="check"><input type="checkbox" id="keepLamp"> keep the LED on between frames (off after 15 min idle)</label>
+      <div class="field"><label for="pixels">Line doubling</label>
+        <select id="pixels"><option value="square">average line pairs (default)</option><option value="lanczos">Lanczos-3 (sharper, less grain aliasing)</option><option value="full">keep all lines (2× height)</option></select></div>
+      <p class="small">The scanner samples twice as many lines as columns. Averaging line pairs and Lanczos-3 both give square pixels. Lanczos-3 aligns the colours and reduces the lines in one step: vertical detail is kept better, with less grain aliasing and slightly less noise, at about 1–3 seconds' extra processing. Very hard edges may show a faint halo. “Keep all lines” saves every line with separate X/Y dpi tags; most programs display it stretched.</p>
+    </details>
+  </section>
+
+  <section>
+    <details><summary>Diagnostics</summary>
+      <div class="row"><button id="bHome" disabled>Home carriage</button><button id="bLamp" disabled>LED on/off</button><button id="bReconnect" disabled>Reconnect scanner</button></div>
+      <div class="row"><button id="bTrace" disabled>Save USB trace of last scan</button><button id="bDry">Dry run (no scanner)</button></div>
+      <p class="small">The trace is saved in the roll folder; check it with <code>tools/compare_trace.py</code>. Dry run uses a simulated scanner and writes real files, so you can check naming and folders. <a href="/experimental" style="color:var(--amber)">Experimental page</a> (custom resolution, crop, IR; unverified).</p>
+    </details>
+  </section>
+</aside>
+
+<div class="stage">
+  <div class="viewer" id="viewer">
+    <img id="view" alt="" hidden>
+    <div class="lamp" id="lampState">lamp off</div>
+    <div class="hint" id="hint">Load the first frame, then press Space to scan and save it.</div>
+  </div>
+  <div class="controls">
+    <select id="profileSel" class="dpi" aria-label="Scan resolution"><option value="prescan">1440 dpi · ~16 MB · ~16 s</option><option value="full">3600 dpi · ~103 MB · ~80 s</option><option value="full7200">7200 dpi · ~411 MB · ~4 min</option></select>
+    <button class="primary big" id="bScan"><span id="scanLabel">Connect scanner</span> <kbd>Space</kbd></button>
+    <button id="bPreview" disabled>Check framing <kbd>P</kbd></button>
+    <span id="pendingRow" hidden><button class="primary" id="bRetry">Retry save</button> <button class="danger" id="bDiscard">Discard unsaved frame</button></span>
+    <button class="danger" id="bStop" disabled title="Stop and park the carriage">Stop</button>
+    <div class="status" id="rollStatus">Press Connect scanner to start.</div>
+  </div>
+  <div class="progress" id="prog"><i></i></div>
+  <div class="tabs"><button class="active" data-tab="roll">Roll</button><button data-tab="log">Log</button></div>
+  <div class="roll" id="roll"></div>
+  <div class="details" id="details" hidden></div>
+  <div class="log" id="log" hidden></div>
+</div>
+<dialog id="picker">
+  <form method="dialog" class="pk">
+    <h3>Choose the folder for this roll</h3>
+    <div class="pkpath"><button type="button" id="pkUp" title="Parent folder">↑</button><input type="text" id="pkPath" spellcheck="false" aria-label="Folder path"><button type="button" id="pkGo">Go</button></div>
+    <div class="pkroots" id="pkRoots"></div>
+    <div class="pklist" id="pkList" role="listbox" aria-label="Sub-folders"></div>
+    <div class="small" id="pkInfo"></div>
+    <div class="pkbtns">
+      <button type="button" id="pkNew">New folder…</button>
+      <button type="button" id="pkNative" hidden>System dialog…</button>
+      <span style="flex:1"></span>
+      <button value="cancel">Cancel</button>
+      <button type="button" class="primary" id="pkUse">Use this folder</button>
+    </div>
+  </form>
+</dialog>
+</main>
+<script src="capture_profiles.js"></script>
+<script src="capture_runtime.js"></script>
+<script src="capture_sim.js"></script>
+<script src="roll.js"></script>
+<script src="motion.js"></script>
+<script>
+'use strict';
+// ---------------------------------------------------------------- constants (v1, capture-verified)
+const VID=0x07B3, PID=0x0C3B;
+const VENDOR={"boot":[[1,34,2,56,3,159,4,34,5,72,6,240,8,0,9,0,10,0,11,74,13,0,16,0,17,0,18,0,19,0,20,0,21,0,22,59,23,12,24,16,25,42,26,48,27,0,28,0,29,154,30,16,31,1,32,16,33,4,34,1,35,1,36,4],[37,0,38,0,39,0,44,2,45,88,46,128,47,128,48,0,49,20,50,39,51,236,52,60,53,0,54,64,55,0,56,42,57,248,61,0,62,0,63,1,82,1,83,4,84,6,85,9,86,12,87,15,88,27,89,0,90,64,94,1,95,1,103,128],[104,128,105,1,106,4,107,49,108,76,109,128,110,76,111,128,112,7,113,8,114,8,115,9,116,0,117,0,118,0,119,0,120,0,121,255,122,0,123,0,124,0,125,0,126,0,127,0,128,0,129,0,130,0,131,0,132,0,133,0,134,0,135,0],[157,0,166,0,167,7,168,32,169,1],["8c",16,212],[11,74],[81,0,58,0,59,248],[81,1,58,0,59,128],[81,2,58,0,59,0],[81,3,58,0,59,0],[81,4,58,0,59,0],[81,5,58,0,59,0],[81,6,58,0,59,0],[81,7,58,0,59,0],[3,191],["8c",16,212],[1,34,2,56,3,159,4,34,5,72,6,240,8,0,9,0,10,0,11,74,13,0,16,0,17,0,18,0,19,0,20,0,21,0,22,39,23,12,24,16,25,42,26,0,27,0,28,32,29,132,30,16,31,1,32,16,33,4,34,1,35,1,36,4],[37,0,38,0,39,0,44,2,45,88,46,128,47,128,48,0,49,20,50,39,51,236,52,60,53,0,54,64,55,0,56,54,57,176,61,0,62,0,63,1,82,10,83,13,84,15,85,1,86,4,87,7,88,49,89,121,90,192,94,1,95,1,103,128],[104,128,105,1,106,4,107,49,108,76,109,0,110,76,111,128,112,12,113,13,114,14,115,15,116,0,117,0,118,0,119,0,120,0,121,0,122,0,123,0,124,0,125,0,126,0,127,0,128,255,129,0,130,0,131,0,132,0,133,0,134,0,135,0],[157,0,166,0,167,7,168,32,169,1],[81,0,58,0,59,248],[81,1,58,0,59,128],[81,2,58,0,59,0],[81,3,58,0,59,0],[81,4,58,0,59,0],[81,5,58,0,59,0],[81,6,58,0,59,0],[81,7,58,0,59,0]],"fast":[20325,12195,10040,8960,8278,7763,7396,7082,6830,6596,6410,6250,6097,5966,5841,5733,5630,5530,5446,5364,5285,5219,5144,5081,5030,4970,4911,4863,4816,4770,4725,4681,4638,4604,4562,4528,4488,4456,4424,4393,4363,4332,4302,4273,4244,4222,4194,4166,4145,4118,4098,4078,4051,4032,4012,3993,3968,3949,3930,3912,3894,3875,3858,3840,3828,3810,3793,3776,3765,3748,3731,3714,3703,3687,3676,3660,3649,3633,3623,3607,3597,3581,3571,3561,3546,3536,3526,3511,3501,3491,3481,3467,3457,3448,3438,3429,3419,3410,3396,3387,3378,3369,3360,3351,3342,3333,3324,3315,3306,3298,3289,3285,3276,3267,3259,3250,3242,3234,3225,3221,3213,3205,3196,3188,3184,3176,3168,3160,3156,3148,3140,3136,3128,3121,3117,3109,3101,3097,3090,3082,3078,3071,3067,3059,3052,3048,3041,3037,3030,3026,3019,3015,3008,3001,2997,2990,2986,2983,2976,2972,2965,2962,2955,2951,2944,2941,2934,2930,2927,2920,2917,2910,2906,2903,2896,2893,2886,2883,2880,2873,2870,2866,2860,2857,2853,2847,2844,2840,2834,2831,2828,2824,2818,2815,2812,2805,2802,2799,2796,2790,2787,2783,2780,2774,2771,2768,2765,2762,2756,2753,2750,2747,2744,2738,2735,2732,2729,2726,2720,2717,2714,2711,2708,2705,2699,2696,2693,2691,2688,2685,2682,2679,2673,2670,2668,2665,2662,2659,2656,2653,2651,2645,2642,2639,2637,2634,2631,2628,2626,2623,2620,2617,2615,2612,2609,2604]};
+const AFE_CONFIG={0x00:0xF8,0x01:0x80}, AFE_V1={gain:[0x23,0x1B,0x24],offset:[0x1E,0x30,0x18]};
+const variant={name:'7600i-v1 (bcdDevice 4.00, GL843)',vendorBoot:true,
+  gpo:[[0x6B,0x31],[0x6C,0x4C],[0x6D,0x00],[0x6E,0x4C],[0x6F,0x80],[0xA6,0x00],[0xA7,0x07],[0xA8,0x20],[0xA9,0x01]]};
+const LAMP_IDLE_MS=15*60*1000, TRACE_MAX=60000;
+
+// ---------------------------------------------------------------- ui helpers
+const $=id=>document.getElementById(id);
+const hex=(v,n=2)=>'0x'+v.toString(16).toUpperCase().padStart(n,'0');
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const t0=performance.now();
+let trace=[], traceMark=0;
+function log(kind,text){ const d=document.createElement('div'); d.className=kind||''; d.textContent=((performance.now()-t0)/1000).toFixed(2).padStart(8)+'  '+text; const L=$('log'); L.appendChild(d); while(L.childElementCount>3000) L.firstChild.remove(); L.scrollTop=L.scrollHeight; }
+function rec(e){ e.t=+((performance.now()-t0)/1000).toFixed(4); trace.push(e); if(trace.length>TRACE_MAX+5000){ const drop=trace.length-TRACE_MAX; trace.splice(0,drop); traceMark=Math.max(0,traceMark-drop); } }
+function progress(f){ $('prog').firstElementChild.style.width=(f*100).toFixed(1)+'%'; }
+function setLamp(on){ const l=$('lampState'); l.className='lamp '+(on?'on':''); l.textContent=on?'LED on':'LED off'; }
+function say(text,kind=''){ const s=$('rollStatus'); s.textContent=text; s.className='status '+kind; }
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('active',x===b)); $('log').hidden=b.dataset.tab!=='log'; $('roll').hidden=b.dataset.tab!=='roll'; $('details').hidden=b.dataset.tab!=='roll'||!selected; });
+
+// ---------------------------------------------------------------- transport
+let dev=null, epIn=1, epOut=2, fake=false, cancelFlag=false, operationActive=false;
+const shadow={};
+class Cancelled extends Error{}
+function checkCancel(){ if(cancelFlag) throw new Cancelled('cancelled'); }
+
+async function ctlOut(value,index,data){
+  const bytes=Uint8Array.from(data); const request=bytes.length>1?0x04:0x0C;
+  rec({dir:'out',req:request,value,index,data:[...bytes]});
+  for(let attempt=0;attempt<10;attempt++){
+    const r=await dev.controlTransferOut({requestType:'vendor',recipient:'device',request,value,index},bytes);
+    if(r.status!=='ok') continue;
+    // mandatory write-ack on bcdDevice >= 2.00: poll status word 0x20 bit 0
+    for(let i=0;i<10;i++){ const a=await rawIn(0x0C,0x8E,0x20,1); if(a[0]&1) return; }
+  }
+  throw new Error('control write not acknowledged '+hex(value));
+}
+async function rawIn(request,value,index,len){
+  const r=await dev.controlTransferIn({requestType:'vendor',recipient:'device',request,value,index},len);
+  if(r.status!=='ok') throw new Error('control read failed '+hex(value)+'/'+hex(index));
+  return new Uint8Array(r.data.buffer,r.data.byteOffset,r.data.byteLength);
+}
+async function ctlIn(value,index,len){ const d=await rawIn(len>1?0x04:0x0C,value,index,len); rec({dir:'in',value,index,data:[...d]}); return d; }
+const writeReg=async(reg,val)=>{ await ctlOut(0x83,0,[reg,val&0xFF]); shadow[reg]=val&0xFF; };
+async function writeRegs(pairs){ for(let i=0;i<pairs.length;i+=32){ const b=[]; for(const [r,v] of pairs.slice(i,i+32)){ b.push(r,v&0xFF); shadow[r]=v&0xFF; } await ctlOut(0x83,0,b);} }
+async function readReg(reg){ await ctlOut(0x83,0,[reg]); return (await ctlIn(0x84,0,1))[0]; }
+const status=async()=>readReg(0x41);
+const write8c=(idx,val)=>ctlOut(0x8C,idx,[val]);
+async function writeU16(reg,v){ await writeReg(reg,v>>8); await writeReg(reg+1,v&0xFF); }
+async function writeU24(reg,v){ await writeReg(reg,(v>>16)&0xFF); await writeReg(reg+1,(v>>8)&0xFF); await writeReg(reg+2,v&0xFF); }
+async function afeWrite(addr,val){ await ctlOut(0x83,0,[0x51,addr,0x3A,(val>>8)&0xFF,0x3B,val&0xFF]); }
+
+async function bulkEnd(){ // vendor capture: no 0x8D is ever sent; one 0x8E/0x18 poll per bulk header
+  for(let i=0;i<256;i++){ const s=(await ctlIn(0x8E,0x18,1))[0]; if((s&0x0C)===0) return; } log('w','bulk end: state never cleared'); }
+
+async function uploadSlopeTable(n,table){
+  // GL843 gamma/table path (SANE write_gamma; Plustek 0x100347E4): 0x5B/0x5C address in 16-byte units, register 0x28, header [1,0,0,0,len]
+  const addr=0x40000+0x8000*n;
+  const bytes=new Uint8Array(table.length*2); table.forEach((v,i)=>{ bytes[2*i]=v&0xFF; bytes[2*i+1]=v>>8; });
+  await writeReg(0x5B,(addr>>12)&0xFF); await writeReg(0x5C,(addr>>4)&0xFF);
+  await ctlOut(0x83,0,[0x28]);
+  const len=bytes.length;
+  await ctlOut(0x82,0,[1,0,0,0,len&0xFF,(len>>8)&0xFF,(len>>16)&0xFF,0]);
+  const pad=new Uint8Array(Math.ceil(len/512)*512); pad.set(bytes);
+  const r=await dev.transferOut(epOut,pad); if(r.status!=='ok') throw new Error('slope table bulk write failed');
+  rec({dir:'bulkout',len:pad.length,table:n});
+  await bulkEnd();
+  if(variant.vendorBoot) await writeReg(0x5B,((addr>>12)&0xFF)&~0x40);   // vendor capture
+  else { await writeReg(0x5B,0); await writeReg(0x5C,0); }              // SANE
+}
+
+
+// ---------------------------------------------------------------- native USB bridge
+// When this page is served by the opticfilm helper program, window.NATIVE_USB is set and USB
+// traffic goes to the helper over HTTP on 127.0.0.1 instead of through WebUSB. The object returned
+// by nativeOpen() mimics the subset of the WebUSB USBDevice API that this page uses.
+async function nativeCall(path,body){
+  const r=await fetch(path,{method:'POST',headers:{'X-Token':window.NATIVE_USB.token},body});
+  if(r.ok) return new Uint8Array(await r.arrayBuffer());
+  if(r.status===409) return null;                       // endpoint stalled
+  throw new Error((await r.text())||('helper returned HTTP '+r.status));
+}
+async function nativeOpen(){
+  const info=JSON.parse(new TextDecoder().decode(await nativeCall('/api/open')));
+  const RT={standard:0x00,class:0x20,vendor:0x40}, RC={device:0,interface:1,endpoint:2,other:3};
+  const rt=(s,inDir)=>(inDir?0x80:0)|RT[s.requestType]|RC[s.recipient];
+  const q=o=>new URLSearchParams(o).toString();
+  const bcd=info.bcdDevice;
+  return {
+    backend:info.backend, productName:info.productName,
+    deviceVersionMajor:bcd>>8, deviceVersionMinor:(bcd>>4)&15, deviceVersionSubminor:bcd&15,
+    configuration:{interfaces:[{alternate:{endpoints:info.endpoints}}]},
+    async open(){}, async selectConfiguration(){}, async claimInterface(){},
+    async close(){ await nativeCall('/api/close'); },
+    async controlTransferOut(s,data){
+      const d=await nativeCall('/api/ctl?'+q({rt:rt(s,false),req:s.request,val:s.value,idx:s.index}),data);
+      return d?{status:'ok',bytesWritten:data.byteLength}:{status:'stall',bytesWritten:0};
+    },
+    async controlTransferIn(s,len){
+      const d=await nativeCall('/api/ctl?'+q({rt:rt(s,true),req:s.request,val:s.value,idx:s.index,len}));
+      return d?{status:'ok',data:new DataView(d.buffer,d.byteOffset,d.byteLength)}:{status:'stall',data:new DataView(new ArrayBuffer(0))};
+    },
+    async transferIn(ep,len){
+      const d=await nativeCall('/api/bulk?'+q({ep:0x80|ep,len}));
+      return d?{status:'ok',data:new DataView(d.buffer,d.byteOffset,d.byteLength)}:{status:'stall',data:new DataView(new ArrayBuffer(0))};
+    },
+    async transferOut(ep,data){
+      const d=await nativeCall('/api/bulk?'+q({ep:ep&0x7F}),data);
+      return d?{status:'ok',bytesWritten:data.byteLength}:{status:'stall',bytesWritten:0};
+    }
+  };
+}
+if(window.NATIVE_USB) addEventListener('pagehide',()=>{ fetch('/api/close',{method:'POST',headers:{'X-Token':window.NATIVE_USB.token},keepalive:true}).catch(()=>{}); });
+
+
+// Homing and stopping use motion.js: only motor primitives recorded from the Plustek software
+// (fast/slow tables, its move registers, its way of stopping a move), with a slow final approach
+// so the carriage always parks at the same place whatever a failed scan left behind.
+let motion=null, positionKnown=false;
+function motionCtl(){
+  if(!motion) motion=Motion.create({writeRegs,status,upload:uploadSlopeTable},Motion.recorded(CAPTURE_PROFILES.full),
+    {log:m=>log('ok',m),sleep,now:()=>performance.now(),check:checkCancel});
+  return motion;
+}
+async function stopMotor(){ positionKnown=false; await motionCtl().stop(); }
+async function home(){ positionKnown=false; say('Homing the carriage…','busy'); await motionCtl().home(); positionKnown=true; }
+
+// ---------------------------------------------------------------- connect / boot
+let dry=false, connected=false;
+async function connect(){
+  if(window.NATIVE_USB){ dev=await nativeOpen(); log('io','native USB backend: '+dev.backend); }
+  else {
+    if(!navigator.usb) throw new Error('No USB access: run the opticfilm helper program, or use a Chromium browser with WebUSB.');
+    dev=await navigator.usb.requestDevice({filters:[{vendorId:VID,productId:PID}]});
+  }
+  await dev.open(); if(!dev.configuration) await dev.selectConfiguration(1); await dev.claimInterface(0);
+  const eps=dev.configuration.interfaces[0].alternate.endpoints;
+  epIn=(eps.find(e=>e.type==='bulk'&&e.direction==='in')||{endpointNumber:1}).endpointNumber;
+  epOut=(eps.find(e=>e.type==='bulk'&&e.direction==='out')||{endpointNumber:2}).endpointNumber;
+  const bcd=(dev.deviceVersionMajor<<8)|(dev.deviceVersionMinor<<4)|dev.deviceVersionSubminor;
+  $('devline').innerHTML=`<b>${dev.productName||'07b3:0c3b'}</b>  bcdDevice ${dev.deviceVersionMajor}.${dev.deviceVersionMinor}${dev.deviceVersionSubminor}  ${dev.backend||'WebUSB'}`;
+  if(bcd!==0x400) throw new Error('This scanner reports bcdDevice '+hex(bcd,4)+'. The recorded profiles are for the 7600i v1 (4.00) only; use the experimental page.');
+  await boot(); await home();
+  if(dry){ dry=false; try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); settings={...defaults,...(s?.settings||{})}; records=s?.records||[]; }catch(e){} selected=null; toUI(); renderRoll(); }
+  connected=true; lampOnAt=null;
+  log('ok','scanner ready');
+}
+async function boot(){
+  await ctlIn(0x8E,0,1);
+  for(const g of VENDOR.boot){ checkCancel(); if(g[0]==='8c') await write8c(g[1],g[2]); else { await ctlOut(0x83,0,g); for(let i=0;i<g.length-1;i+=2) shadow[g[i]]=g[i+1]; } }
+  await writeRegs(variant.gpo); await sleep(100);
+  const vals={...AFE_CONFIG,0x02:AFE_V1.gain[0],0x03:AFE_V1.gain[1],0x04:AFE_V1.gain[2],0x05:AFE_V1.offset[0],0x06:AFE_V1.offset[1],0x07:AFE_V1.offset[2]};
+  for(const a of Object.keys(vals)) await afeWrite(+a,vals[a]);
+  log('ok','ASIC booted (vendor sequence), AFE and GPIO set');
+}
+
+// ---------------------------------------------------------------- lamp
+let lampOnAt=null, lampTimer=null;
+async function lampSet(on){ const v=shadow[0x03]??0x9F; await writeReg(0x03,on?(v|0x10):(v&~0x10)); lampOnAt=on?performance.now():null; setLamp(on); }
+async function warmIfNeeded(){
+  const need=Math.max(0,+settings.warm||0)*1000; if(!need) return;
+  if(lampOnAt===null) await lampSet(true);
+  const left=need-(performance.now()-lampOnAt);
+  if(left>0){ say(`LED warm-up (${Math.ceil(left/1000)} s)…`,'busy'); for(let t=left;t>0;t-=100){ checkCancel(); await sleep(Math.min(t,100)); } }
+}
+function scheduleLampOff(){
+  clearTimeout(lampTimer); if(dry||!connected) return;
+  lampTimer=setTimeout(async()=>{ if(operationActive||lampOnAt===null) return; try{ await lampSet(false); log('','LED switched off after 15 min idle'); }catch(e){ log('w','LED off failed: '+e.message); } },LAMP_IDLE_MS);
+}
+
+// ---------------------------------------------------------------- acquisition (recorded vendor profiles)
+async function acquire(key, requested=settings){
+  const scanSettings={...requested};
+  const p=CaptureRuntime.prepareProfile(CAPTURE_PROFILES[key],scanSettings); traceMark=trace.length;
+  log('',`sensor pixels: ${scanSettings.pixelSampling||'deletion'}; exposure: recorded (1×)`);
+  if(p.acquisitionOptions) log('w','Experimental sensor averaging: live calibration reads use averaging, but AFE/shading and comparison references are recorded in deletion mode. This is not fresh calibration.' );
+  const hooks={check:checkCancel,log:m=>log('io',m),sleep:async ms=>{for(let left=ms;left>0;left-=50){checkCancel();await sleep(Math.min(left,50));}},
+    progress:(frame,got,total)=>{if(frame===p.mainFrame)progress(got/total);}};
+  const scanning=()=>say(`Scanning ${key==='full7200'?'at 7200 dpi (about 4 minutes)':key==='full'?'at 3600 dpi (about 80 s)':'quick pass (about 16 s)'}…`,'busy');
+  if(!dry){
+    // a complete previous scan leaves the carriage where the chip's own return parks it (as in the
+    // recordings); anything else (connect, failure, stop, manual moves) gets a full homing
+    if(!positionKnown||!((await status())&0x08)) await home();
+    positionKnown=false; await warmIfNeeded();
+  }
+  scanning();
+  const io=dry?null:{
+    async control(op){
+      const setup={requestType:'vendor',recipient:'device',request:op.request,value:op.value,index:op.index};
+      if(op.rt===0x40){
+        const bytes=Uint8Array.from(op.data); const r=await dev.controlTransferOut(setup,bytes);
+        if(r.status!=='ok'||(r.bytesWritten!==undefined&&r.bytesWritten!==bytes.length)) throw new Error('control write failed');
+        if(op.value===0x83&&bytes.length>1) for(let i=0;i<bytes.length;i+=2) shadow[bytes[i]]=bytes[i+1];
+        rec({dir:'out',req:op.request,value:op.value,index:op.index,data:op.data}); return;
+      }
+      const r=await dev.controlTransferIn(setup,op.length); if(r.status!=='ok') throw new Error('control read failed');
+      const bytes=new Uint8Array(r.data.buffer,r.data.byteOffset,r.data.byteLength);
+      rec({dir:'in',req:op.request,value:op.value,index:op.index,data:[...bytes]}); return bytes;
+    },
+    async write(bytes){ const r=await dev.transferOut(epOut,bytes); if(r.status!=='ok'||(r.bytesWritten!==undefined&&r.bytesWritten!==bytes.length)) throw new Error('table upload failed'); rec({dir:'bulkout',len:bytes.length}); },
+    async read(n){ const r=await dev.transferIn(epIn,n); if(r.status!=='ok') throw new Error('bulk read failed'); return new Uint8Array(r.data.buffer,r.data.byteOffset,r.data.byteLength); }
+  };
+  // Lamp check: the replay uses the vendor's recorded AFE gains and shading tables, which are only
+  // right for a lamp in the state the vendor measured. Its white calibration reads (streamed in
+  // every sequence before the main scan) are compared with the vendor's; a cold or flickering lamp
+  // gives colour casts and banding, so the sequence is stopped and retried once the lamp settles.
+  const started=performance.now(); let bytes, lamp;
+  for(let attempt=1;;attempt++){
+    lamp={};
+    hooks.frameDone=async(i,data)=>{
+      if(scanSettings.lampCheck==='off'&&!p.acquisitionOptions) return;
+      const kind=i===p.lamp.line.frame?'line':i===p.lamp.dark.frame?'dark':'shading';
+      const st=CaptureRuntime.whiteStats(data,p.frames[i]);
+      const v=kind==='dark'?CaptureRuntime.darkVerdict(st,p.lamp.dark):CaptureRuntime.lampVerdict(kind,st,p.lamp[kind]);
+      lamp[kind]={...st,...v};
+      log(v.ok?'':'w',kind==='dark'
+        ?`black level (LED off): R ${v.delta[0]>0?'+':''}${v.delta[0]}, G ${v.delta[1]>0?'+':''}${v.delta[1]}, B ${v.delta[2]>0?'+':''}${v.delta[2]} counts vs the recorded calibration${v.ok?' (within tolerance)':scanSettings.blackLevel?' → corrected in the image':' → NOT corrected (option off): expect a colour cast'}`
+        :`illumination check, ${kind==='line'?'white line':'white shading'}: level ${v.levelPct>0?'+':''}${v.levelPct} %, G/R ${v.grPct>0?'+':''}${v.grPct} %, B/R ${v.brPct>0?'+':''}${v.brPct} %, ripple ${v.flickerPct} %${v.ok?' (within recorded reference limits)':' → '+v.issues.join('; ')}`);
+      if(kind==='dark'){ if(!v.ok&&!scanSettings.blackLevel) lamp.warning=[lamp.warning,v.issues[0]].filter(Boolean).join('; '); return; }
+      if(!v.ok&&scanSettings.lampCheck==='wait'&&performance.now()-started<LAMP_MAX_WAIT_MS) throw new LampNotReady(v.issues);
+      if(!v.ok) lamp.warning=[lamp.warning,...v.issues].filter(Boolean).join('; ');
+    };
+    try{
+      if(dry){ bytes=await CaptureRuntime.run(p,CaptureSim.create(p,{lampReadyAt:window.__dryLampReadyAt||0}),hooks); break; }
+      bytes=await CaptureRuntime.run(p,io,hooks);
+      const deadline=performance.now()+60000;      // the recordings end during automatic return
+      while(!((await status())&0x08)){ checkCancel(); if(performance.now()>deadline) throw new Error('carriage did not return home'); await sleep(100); }
+      positionKnown=true;
+      lampOnAt=(shadow[0x03]&0x10)?(lampOnAt??performance.now()):null;
+      if(scanSettings.keepLamp) { if(lampOnAt===null) await lampSet(true); } else await lampSet(false);
+      setLamp(lampOnAt!==null);
+      break;
+    }catch(e){
+      if(!dry){ try{ await stopMotor(); }catch(_){} }
+      if(!(e instanceof LampNotReady)){ if(!dry) lampOnAt=null; progress(0); throw e; }
+      // keep the lamp lit (it stays warm), wait, re-home and run the sequence again
+      if(!dry&&!(shadow[0x03]&0x10)) await lampSet(true);
+      for(let t=LAMP_RETRY_MS;t>0;t-=250){ checkCancel(); say(`Illumination outside the official range (${e.issues.join('; ')}). Retrying in ${Math.ceil(t/1000)} s (attempt ${attempt+1})…`,'busy'); await sleep(250); }
+      if(!dry){ await home(); positionKnown=false; }
+      scanning();
+    }
+    finally{ progress(0); }
+  }
+  if(lamp.warning) log('w',`scanned with the illumination outside the official range: ${lamp.warning}`);
+  return {bytes,profile:p,lamp};
+}
+class LampNotReady extends Error{ constructor(issues){ super('illumination not settled: '+issues.join('; ')); this.issues=issues; } }
+const LAMP_RETRY_MS=15000, LAMP_MAX_WAIT_MS=60000;   // an LED settles at once; this only covers transients
+
+// ---------------------------------------------------------------- output folder
+const nativeFiles=!!(window.NATIVE_USB&&window.NATIVE_USB.files);
+const outFolder=()=>dry?settings.dir.replace(/[\\/]+$/,'')+sep+'dry-run':settings.dir;
+const store={
+  async exists(names){
+    if(!nativeFiles) return [];
+    const r=await fetch('/api/files/check',{method:'POST',headers:{'X-Token':window.NATIVE_USB.token},body:JSON.stringify({dir:outFolder(),names})});
+    if(!r.ok) throw new Error(await r.text()); return (await r.json()).existing;
+  },
+  async save(name,parts,{overwrite}={}){
+    const blob=parts.length===1&&parts[0] instanceof Blob?parts[0]:new Blob(parts);
+    if(!nativeFiles){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),60000); return {bytes:blob.size,sha256:null}; }
+    const q=new URLSearchParams({dir:outFolder(),name,overwrite:overwrite?'1':'0'});
+    const r=await fetch('/api/files/save?'+q,{method:'POST',headers:{'X-Token':window.NATIVE_USB.token},body:blob});
+    if(!r.ok) throw new Error((await r.text()).trim()||('HTTP '+r.status)); return r.json();
+  }
+};
+
+// ---------------------------------------------------------------- settings and records (survive a page reload)
+const KEY='opticfilm.roll.v1';
+const sep=(window.NATIVE_USB?.defaultDir||'').includes('\\')?'\\':'/';
+const defaults={dir:window.NATIVE_USB?.defaultDir?window.NATIVE_USB.defaultDir+sep+'Roll001':'',prefix:'Roll001_',next:1,digits:2,film:'neg',orientation:1,
+  tiff:'aligned',pixels:'square',profile:'full',jpeg:false,mirror:true,warm:1,keepLamp:true,lampCheck:'warn',blackLevel:true,pixelSampling:'deletion',exposureMultiplier:'1'};
+let settings={...defaults}, records=[], pending=null, selected=null, rescan=null;
+try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s){ settings={...defaults,...s.settings}; records=s.records||[]; if(!s.v&&settings.warm===20) settings.warm=1; } }catch(e){}   // 20 s was the old default
+function persist(){ if(dry) return; try{ localStorage.setItem(KEY,JSON.stringify({v:2,settings,records:records.map(({large,...r})=>r)})); }catch(e){ log('w','could not remember the roll list in this browser: '+e.message); } }
+const bind=[['outDir','dir','text'],['prefix','prefix','text'],['nextNo','next','int'],['digits','digits','int'],['film','film','text'],['orient','orientation','int'],
+  ['tiffKind','tiff','text'],['pixels','pixels','text'],['profileSel','profile','text'],['saveJpeg','jpeg','check'],['mirror','mirror','check'],['warm','warm','int'],['keepLamp','keepLamp','check'],['lampCheck','lampCheck','text'],['blackLevel','blackLevel','check'],['pixelSampling','pixelSampling','text'],['exposureMultiplier','exposureMultiplier','text']];
+function toUI(){ for(const [id,k,t] of bind){ if(t==='check') $(id).checked=!!settings[k]; else $(id).value=settings[k]; } refreshName(); }
+function fromUI(){ for(const [id,k,t] of bind){ settings[k]=t==='check'?$(id).checked:t==='int'?parseInt($(id).value||'0',10):$(id).value.trim(); }
+  const clean=Roll.cleanPrefix(settings.prefix); if(clean!==settings.prefix){ settings.prefix=clean; $('prefix').value=clean; } persist(); refreshName(); }
+function refreshName(){
+  let t; try{ t=Roll.fileNames(settings,settings.next).map(f=>f.name).join('  '); }catch(e){ t='—'; }
+  $('nextName').textContent=t; $('scanLabel').textContent=!(connected||dry)?'Connect scanner':rescan!==null?`Rescan ${tifName(rescan)} (overwrite)`:`Scan & Save ${tifName(settings.next)}`;
+  $('profileSel').title=DPI_INFO[settings.profile]||'';
+}
+const DPI_INFO={prescan:'Quick index scan: 1440 dpi, ~16 MB, ~16 s',full:'Full resolution: 3600 dpi, ~103 MB, ~80 s',full7200:'Maximum: 7200 dpi, ~411 MB, ~4 min, needs ~1.4 GB free memory'};
+const tifName=n=>{ try{ return (Roll.fileNames(settings,n).find(f=>f.kind==='tiff'||f.kind==='raw-tiff')||{name:safeBase(n)}).name; }catch(e){ return '—'; } };
+const safeBase=n=>{ try{ return Roll.baseName(settings.prefix,n,settings.digits); }catch(e){ return '—'; } };
+for(const [id] of bind) $(id).addEventListener('change',()=>{ fromUI(); if(id==='outDir') checkMissing(); if(id==='profileSel'&&settings.profile==='full7200') say('7200 dpi needs about 1.4 GB of free memory while the frame is processed.');
+  if(id==='film'||id==='orient'||id==='mirror') log('',`${{film:'film',orient:'orientation',mirror:'horizontal flip'}[id]} changed; applies to the next frame`); });
+$('prefix').addEventListener('input',()=>{ settings.prefix=$('prefix').value; refreshName(); });
+$('nextNo').addEventListener('input',()=>{ settings.next=parseInt($('nextNo').value||'0',10); rescan=null; refreshName(); });
+
+// ---------------------------------------------------------------- roll list
+function renderRoll(){
+  const R=$('roll'); R.innerHTML='';
+  if(!records.length){ const e=document.createElement('div'); e.className='empty'; e.textContent='Saved frames appear here. Each keeps a small preview and its file record; the full-resolution data is released once written to disk.'; R.appendChild(e); return; }
+  const gone=records.filter(r=>missing.has(r.number));
+  if(gone.length){
+    const bar=document.createElement('div'); bar.className='rollbar';
+    const t=document.createElement('span'); t.textContent=`${gone.length} frame${gone.length===1?'':'s'} no longer found in the folder (deleted or moved outside this app).`;
+    const b=document.createElement('button'); b.textContent=`Remove ${gone.length===1?'it':'them'} from the list`; b.onclick=()=>removeRecords(gone.map(r=>r.number));
+    bar.append(t,b); R.appendChild(bar);
+  }
+  for(const r of [...records].sort((a,b)=>b.number-a.number)){
+    const f=document.createElement('figure'); if(selected===r) f.className='sel'; if(r.status!=='saved') f.classList.add('failed'); if(missing.has(r.number)) f.classList.add('missing');
+    const img=document.createElement('img'); img.alt=r.base; if(r.thumb) img.src=r.thumb;
+    const cap=document.createElement('figcaption'); const mb=r.files.reduce((a,x)=>a+(x.bytes||0),0)/1048576;
+    cap.innerHTML=`<b></b>${mb.toFixed(0)} MB · ${new Date(r.scanned).toLocaleTimeString()}`; cap.querySelector('b').textContent=r.base;
+    if(missing.has(r.number)){ const m=document.createElement('i'); m.textContent='file missing'; cap.appendChild(m); }
+    f.append(img,cap); f.onclick=()=>select(r); R.appendChild(f);
+  }
+}
+function select(r){
+  selected=r; show(r.large||r.thumb);
+  const d=$('details'); d.hidden=false;
+  d.textContent=`${r.base}  ·  ${new Date(r.scanned).toLocaleString()}  ·  ${r.profile}  ·  film ${r.film}  ·  ${Roll.ORIENTATIONS[r.orientation]}\n`+
+    r.files.map(f=>`  ${f.name}  ${(f.bytes/1048576).toFixed(1)} MB${f.width?`  ${f.width}×${f.height}`:''}${f.sha256?'  sha256 '+f.sha256.slice(0,16)+'…':''}`).join('\n')+
+    `\n  channel alignment R/G/B ${r.shifts.join(' / ')} lines (confidence ${r.shiftConfidence.slice(1).join(', ')})`;
+  const b=document.createElement('button'); b.textContent=`Rescan ${r.base} (overwrite)…`; b.style.marginTop='8px';
+  b.onclick=()=>{ if(confirm(`Scan frame ${r.base} again and overwrite its files?\n\nLoad that frame in the holder first.`)){ rescan=r.number; refreshName(); say(`Next scan replaces ${r.base}. Press Space when the frame is in place.`); } };
+  const rm=document.createElement('button'); rm.className='danger'; rm.textContent=`Remove ${r.base} from list…`; rm.style.margin='8px 0 0 8px';
+  rm.onclick=()=>{ if(confirm(`Remove ${r.base} from the roll list?\n\nFiles on disk are not touched.`)) removeRecords([r.number]); };
+  if(missing.has(r.number)) d.append('\n  ⚠ not found in the current folder');
+  d.append('\n',b,rm); renderRoll();
+}
+// Roll list housekeeping: frames whose files were deleted outside the app are flagged, and any
+// frame can be dropped from the list (and from the roll record JSON). Files on disk are never deleted.
+let missing=new Set(), checkingMissing=false;
+const imageFiles=r=>{ const img=r.files.filter(f=>f.kind==='tiff'||f.kind==='raw-tiff'); return (img.length?img:r.files).map(f=>f.name); };
+async function checkMissing(){
+  if(!nativeFiles||dry||!records.length||!settings.dir||checkingMissing){ if(missing.size&&(!records.length||dry)){ missing=new Set(); renderRoll(); } return; }
+  checkingMissing=true;
+  try{
+    const existing=new Set(await store.exists(records.flatMap(imageFiles)));
+    const now=new Set(records.filter(r=>!imageFiles(r).some(n=>existing.has(n))).map(r=>r.number));
+    const changed=now.size!==missing.size||[...now].some(n=>!missing.has(n));
+    missing=now; if(changed){ renderRoll(); if(selected) select(selected); }
+  }catch(e){ log('w','could not check the roll folder: '+e.message); }
+  finally{ checkingMissing=false; }
+}
+async function removeRecords(numbers){
+  if(operationActive){ say('Wait for the current scan to finish before removing frames.','err'); return; }
+  const drop=new Set(numbers), names=records.filter(r=>drop.has(r.number)).map(r=>r.base);
+  if(!names.length) return;
+  records=records.filter(r=>!drop.has(r.number)); for(const n of drop) missing.delete(n);
+  if(selected&&drop.has(selected.number)){ selected=null; $('details').hidden=true; $('view').hidden=true; $('hint').hidden=false; }
+  if(rescan!==null&&drop.has(rescan)) rescan=null;
+  persist(); renderRoll(); refreshName();
+  log('w',`removed from the roll list: ${names.join(', ')} (files on disk untouched)`);
+  say(`Removed ${names.length===1?names[0]:names.length+' frames'} from the list. Files on disk were not touched.`,'ok');
+  // keep the roll record JSON in step, but never recreate a folder the user has deleted
+  if(nativeFiles&&!dry){
+    const mf=Roll.manifestName(settings);
+    try{ if((await store.exists([mf])).length) await store.save(mf,[JSON.stringify(Roll.manifest(settings,records),null,2)],{overwrite:true}); }
+    catch(e){ log('w','roll record not updated: '+e.message); }
+  }
+}
+function show(src){ const v=$('view'); if(src){ v.src=src; v.hidden=false; $('hint').hidden=true; } }
+
+// preview rendering: auto levels per channel, inversion for negatives, orientation as the TIFF tag says
+async function makePreview(planes,g,s){
+  const c=document.createElement('canvas'); c.width=g.pixels; c.height=g.lines;
+  const ctx=c.getContext('2d'), im=ctx.createImageData(g.pixels,g.lines);
+  im.data.set(CaptureRuntime.renderPreview(planes,g,s.film)); ctx.putImageData(im,0,0);
+  const rot={1:0,6:90,3:180,8:-90}[s.orientation]||0, swap=Math.abs(rot)===90;
+  const o=document.createElement('canvas'); o.width=swap?c.height:c.width; o.height=swap?c.width:c.height;
+  const x=o.getContext('2d'); x.translate(o.width/2,o.height/2); x.rotate(rot*Math.PI/180); x.drawImage(c,-c.width/2,-c.height/2);
+  const t=document.createElement('canvas'), k=240/Math.max(o.width,o.height); t.width=Math.round(o.width*k); t.height=Math.round(o.height*k);
+  const tx=t.getContext('2d'); tx.imageSmoothingQuality='high'; tx.drawImage(o,0,0,t.width,t.height);
+  return {large:o.toDataURL('image/jpeg',0.88),thumb:t.toDataURL('image/jpeg',0.75)};
+}
+const previewJpeg=async p=>p?.large?(await fetch(p.large)).blob():null;
+
+// ---------------------------------------------------------------- the per-frame workflow
+function ctxFor(number,overwrite){ const snapshot={...settings}; return {settings:snapshot,number,overwrite,store,acquire:key=>acquire(key,snapshot),makePreview,previewJpeg,log:m=>log('ok',m)}; }
+function checkReady(){
+  if(!settings.dir&&nativeFiles) throw new Error('Choose a folder for this roll first.');
+  if(nativeFiles&&!/^([A-Za-z]:[\\/]|\\\\|\/)/.test(settings.dir)) throw new Error('The folder must be a full path, e.g. '+(sep==='\\'?'C:\\Scans\\Roll001':'/home/me/Scans/Roll001'));
+  if(!Roll.cleanPrefix(settings.prefix)) throw new Error('Enter a name prefix, e.g. Roll001_');
+}
+async function scanAndSave(){
+  fromUI(); checkReady();
+  CaptureRuntime.prepareProfile(CAPTURE_PROFILES[settings.profile],settings);
+  const number=rescan??settings.next, overwrite=rescan!==null, base=Roll.baseName(settings.prefix,number,settings.digits);
+  say(`Scanning ${base}…`,'busy'); log('',`frame ${base}: scan started`);
+  let r;
+  try{ r=await Roll.scanFrame(ctxFor(number,overwrite)); }
+  catch(e){
+    if(e instanceof Roll.NameInUse){ say(`${base} already exists in this folder. Use “Skip to next free number”, change the number, or select the frame and rescan it.`,'err'); log('err',e.message); return; }
+    if(e instanceof Roll.SaveFailed){ holdPending(e.pending,e); return; }
+    throw e;
+  }
+  await frameSaved(r,overwrite);
+}
+function holdPending(p,e){
+  pending=p; $('pendingRow').hidden=false; $('bScan').disabled=true; $('bPreview').disabled=true;
+  if(p.preview) show(p.preview.large);
+  say(`${p.base} was scanned but not saved: ${e.cause?.message||e.message}. Fix the folder (space, permissions), then Retry. The image is still in memory.`,'err');
+  log('err',e.message);
+}
+async function retrySave(){
+  if(!pending) return; fromUI();
+  const p=pending; say(`Saving ${p.base}…`,'busy');
+  try{ const r=await Roll.saveFrame(ctxFor(p.number,p.overwrite),p); pending=null; $('pendingRow').hidden=true; await frameSaved(r,p.overwrite); }
+  catch(e){ if(e instanceof Roll.SaveFailed) holdPending(e.pending,e); else throw e; }
+}
+function discardPending(){ if(!pending||!confirm(`Discard the unsaved scan of ${pending.base}?`)) return; log('w',`discarded unsaved ${pending.base}`); pending=null; $('pendingRow').hidden=true; say('Unsaved frame discarded. Scan it again when ready.'); enableScan(); }
+async function frameSaved(r,wasRescan){
+  records=records.filter(x=>x.number!==r.number); records.push(r);
+  if(!wasRescan) settings.next=Math.max(settings.next,r.number+1);
+  rescan=null; toUI(); persist(); select(r);
+  try{ await store.save(Roll.manifestName(settings),[JSON.stringify(Roll.manifest(settings,records),null,2)],{overwrite:true}); }
+  catch(e){ log('w','roll record not updated: '+e.message); }
+  const mb=r.files.reduce((a,x)=>a+x.bytes,0)/1048576;
+  say(`Saved ${r.base} (${mb.toFixed(0)} MB).${r.lampWarning?' ⚠ Illumination/black level outside the official range ('+r.lampWarning+'); colours may be off.':''} Load the next frame and press Space for ${safeBase(settings.next)}.`,r.lampWarning?'err':'ok');
+  $('hint').textContent=''; scheduleLampOff(); enableScan();
+}
+async function checkFraming(){
+  fromUI();
+  CaptureRuntime.prepareProfile(CAPTURE_PROFILES.prescan,settings);
+  say('Quick prescan for framing (not saved)…','busy');
+  const {bytes,profile,lamp}=await acquire('prescan');
+  const al=CaptureRuntime.measureShifts(bytes,profile), g=CaptureRuntime.geometry(profile,al.shifts);
+  const pv=CaptureRuntime.previewPlanes(bytes,g,1200,null,settings.mirror!==false); show((await makePreview(pv.planes,pv.g,settings)).large);
+  say(`Framing preview shown (not saved).${lamp?.warning?' ⚠ Illumination/black level outside the official range ('+lamp.warning+'): colours unreliable.':''} Press Space to scan and save ${safeBase(rescan??settings.next)}.`,lamp?.warning?'err':'ok'); scheduleLampOff();
+}
+
+
+// ---------------------------------------------------------------- folder chooser (popup)
+const dlg=$('picker'); let pkCur=null;
+async function api(path,body){ const r=await fetch(path,{method:'POST',headers:{'X-Token':window.NATIVE_USB.token},body:JSON.stringify(body)}); if(!r.ok) throw new Error((await r.text()).trim()||('HTTP '+r.status)); return r.json(); }
+async function pkLoad(dir){
+  $('pkInfo').textContent='';
+  try{
+    const r=await api('/api/files/list',{dir}); pkCur=r;
+    const want=(dir||'').replace(/[\\/]+$/,''), missing=want&&want!==r.dir&&!want.startsWith(r.dir+r.sep+'.');
+    $('pkPath').value=missing?want:r.dir; $('pkUp').disabled=!r.parent; $('pkNative').hidden=!r.native;
+    const L=$('pkList'); L.innerHTML='';
+    if(!r.dirs.length){ const e=document.createElement('div'); e.className='none'; e.textContent='No sub-folders here.'; L.appendChild(e); }
+    for(const d of r.dirs){ const b=document.createElement('button'); b.type='button'; b.textContent='📁 '+d.name; b.onclick=()=>pkLoad(d.path); L.appendChild(b); }
+    const R=$('pkRoots'); R.innerHTML='';
+    for(const d of r.roots){ const b=document.createElement('button'); b.type='button'; b.textContent=d.name; b.title=d.path; b.onclick=()=>pkLoad(d.path); R.appendChild(b); }
+    $('pkInfo').textContent=missing?`“${want}” does not exist yet; it will be created when the first frame is saved. Showing ${r.dir}.`
+      :`${r.tiffs} TIFF file${r.tiffs===1?'':'s'} in this folder.`;
+  }catch(e){ $('pkInfo').textContent=e.message; }
+}
+function pkClose(){ if(dlg.open) typeof dlg.close==='function'?dlg.close():dlg.removeAttribute('open'); }
+function pkUse(path){
+  path=(path||'').trim();
+  if(!/^([A-Za-z]:[\\/]|\\\\|\/)/.test(path)){ $('pkInfo').textContent='Enter a full path, or pick a folder from the list.'; return; }
+  settings.dir=path; $('outDir').value=path; fromUI(); pkClose(); log('ok','roll folder: '+path); refreshName(); checkMissing();
+  say(`Folder set: ${path}`);
+}
+$('bChoose').onclick=()=>{
+  if(!nativeFiles){ alert('Choosing a folder needs the opticfilm helper program. Without it, files go to the browser\'s Downloads folder.'); return; }
+  fromUI(); typeof dlg.showModal==='function'?dlg.showModal():dlg.setAttribute('open',''); pkLoad(settings.dir||window.NATIVE_USB.defaultDir);
+};
+$('pkUp').onclick=()=>pkCur?.parent&&pkLoad(pkCur.parent);
+$('pkGo').onclick=()=>pkLoad($('pkPath').value.trim());
+$('pkPath').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); pkLoad($('pkPath').value.trim()); } });
+$('pkUse').onclick=()=>pkUse($('pkPath').value);
+$('pkNew').onclick=async()=>{
+  const base=pkCur?.dir; if(!base) return;
+  const suggestion=Roll.cleanPrefix(settings.prefix).replace(/[_\-. ]+$/,'')||'Roll';
+  const name=prompt('New folder name:',suggestion); if(!name) return;
+  try{ const r=await api('/api/files/mkdir',{dir:base,name:name.trim()}); await pkLoad(r.dir); }catch(e){ $('pkInfo').textContent=e.message; }
+};
+$('pkNative').onclick=async()=>{
+  $('pkInfo').textContent='Waiting for the system folder dialog (it may open behind this window)…';
+  try{ const r=await api('/api/files/pickdir',{dir:$('pkPath').value.trim()}); if(r.dir) pkUse(r.dir); else $('pkInfo').textContent='Cancelled.'; }
+  catch(e){ $('pkInfo').textContent=e.message; }
+};
+
+// ---------------------------------------------------------------- buttons, keys, guard
+function enableScan(){ ['pixelSampling','exposureMultiplier'].forEach(id=>$(id).disabled=operationActive||!!pending); const ok=(connected||dry)&&!pending&&!operationActive; $('bScan').disabled=(connected||dry)?!ok:operationActive; $('bPreview').disabled=!ok; ['bHome','bLamp','bReconnect'].forEach(i=>$(i).disabled=!connected||operationActive); $('bTrace').disabled=!(connected&&trace.length>traceMark); $('bStop').disabled=!connected; }
+function guard(fn){ return async()=>{ if(operationActive) return; operationActive=true; cancelFlag=false; enableScan(); $('bStop').disabled=!(connected||dry);
+  try{ await fn(); }
+  catch(e){ if(e instanceof Cancelled){ log('w','stopped'); say('Stopped. The carriage has been parked.'); try{ cancelFlag=false; await stopMotor(); await home(); }catch(_){} }
+    else { const slow=e.name==='ThroughputTooLow';
+      log('err',e.message);
+      say(slow?`Stopped: ${e.message}. Close other browser tabs and programs, or scan at a lower resolution.`:e.message,'err');
+      console.error(e); if(connected&&e.name!=='ScanConfigurationError'){ try{ await stopMotor(); }catch(_){} } } progress(0); }
+  finally{ operationActive=false; enableScan(); } }; }
+async function connectScanner(){
+  if(dev){ connected=false; refreshName(); try{ await dev.close(); }catch(_){} dev=null; }
+  say('Connecting…','busy');
+  try{ await connect(); } finally { refreshName(); }
+  say(`Ready. Load the first frame and press Space to scan ${safeBase(settings.next)}.`,'ok');
+}
+function leaveDryRun(){
+  dry=false; try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); settings={...defaults,...(s?.settings||{})}; records=s?.records||[]; }catch(e){}
+  selected=null; rescan=null; $('details').hidden=true; $('view').hidden=true; $('hint').hidden=false; toUI(); renderRoll();
+  $('bDry').textContent='Dry run (no scanner)'; $('devline').textContent='no scanner connected';
+  log('','dry run ended'); say('Dry run ended. Press Connect scanner to use the real scanner.'); checkMissing();
+}
+$('bDry').onclick=guard(async()=>{ if(pending){ throw new Error('Save or discard the unsaved frame first.'); } if(dry) return leaveDryRun(); dry=true; connected=false; records=[]; selected=null; rescan=null; settings.next=1; toUI(); renderRoll(); $('details').hidden=true; $('devline').innerHTML='<span class="dry">DRY RUN</span> simulated scanner: files are real, images are synthetic'; log('w','dry run: simulated scanner'); say(`Dry run ready: synthetic frames are saved to ${nativeFiles?outFolder():'browser downloads'}. Your roll list and counter are untouched; press End dry run to return to them.`); $('bDry').textContent='End dry run'; });
+$('bScan').onclick=guard(()=>(connected||dry)?scanAndSave():connectScanner());
+$('bReconnect').onclick=guard(connectScanner);
+$('bPreview').onclick=guard(checkFraming);
+$('bRetry').onclick=guard(retrySave);
+$('bDiscard').onclick=discardPending;
+$('bStop').onclick=()=>{ if(!operationActive&&!connected) return; if(!operationActive) return guard(async()=>{ await stopMotor(); await home(); say('Carriage parked.'); })(); cancelFlag=true; log('w','stop requested; parking after the current transfer'); };
+$('bHome').onclick=guard(async()=>{ await home(); say('Carriage parked.'); });
+$('bLamp').onclick=guard(async()=>{ await lampSet(lampOnAt===null); });
+$('bNextFree').onclick=guard(async()=>{ fromUI(); checkReady(); rescan=null; settings.next=await Roll.nextFree(store,settings,settings.next); toUI(); persist(); say(`Next free number: ${safeBase(settings.next)}`); });
+$('bNewRoll').onclick=()=>{
+  if(pending){ alert('Save or discard the unsaved frame first.'); return; }
+  const name=prompt('Roll name for the new roll (files become <prefix>01.tif, <prefix>02.tif …):',settings.prefix.replace(/\d+(\D*)$/,m=>String(parseInt(m,10)+1).padStart(m.match(/^\d+/)[0].length,'0')+m.replace(/^\d+/,'')));
+  if(!name) return; const clean=Roll.cleanPrefix(name); if(!clean){ alert('That prefix has no usable characters.'); return; }
+  settings.prefix=clean; settings.next=1; rescan=null;
+  if(window.NATIVE_USB?.defaultDir&&confirm(`Also use a new folder?\n\n${window.NATIVE_USB.defaultDir}${sep}${clean.replace(/[_\-. ]+$/,'')}`)) settings.dir=window.NATIVE_USB.defaultDir+sep+clean.replace(/[_\-. ]+$/,'');
+  records=[]; selected=null; $('details').hidden=true; $('view').hidden=true; $('hint').hidden=false; toUI(); persist(); renderRoll(); say(`New roll ${clean}. Load frame 1 and press Space.`);
+};
+$('bTrace').onclick=guard(async()=>{ fromUI(); const r=records.length?[...records].sort((a,b)=>b.scanned.localeCompare(a.scanned))[0]:null;
+  const name=(r?r.base:Roll.cleanPrefix(settings.prefix)+'last')+'_usbtrace.json';
+  const doc={device:'07b3:0c3b',bcdDevice:dev?`${dev.deviceVersionMajor}.${dev.deviceVersionMinor}${dev.deviceVersionSubminor}`:null,fake:dry,variant:variant.name,trace:trace.slice(traceMark)};
+  const res=await store.save(name,[JSON.stringify(doc)],{overwrite:true}); log('ok',`saved ${name} (${trace.length-traceMark} transfers)`); say(`USB trace saved as ${name}`,'ok'); });
+document.addEventListener('keydown',e=>{
+  if(dlg.open||e.target?.closest?.('input,select,textarea,dialog')||e.ctrlKey||e.metaKey||e.altKey) return;
+  if(e.code==='Space'&&!$('bScan').disabled){ e.preventDefault(); $('bScan').click(); }
+  else if(e.key==='p'&&!$('bPreview').disabled){ e.preventDefault(); $('bPreview').click(); }
+});
+addEventListener('beforeunload',e=>{ if(pending||operationActive){ e.preventDefault(); e.returnValue=''; } });
+
+toUI(); renderRoll(); enableScan(); checkMissing();
+addEventListener('focus',()=>{ if(!operationActive) checkMissing(); });
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&!operationActive) checkMissing(); });
+if(!nativeFiles) log('w','Not running under the opticfilm helper: files go to the browser\'s Downloads folder and existing files cannot be checked.');
+log('',`roll ${settings.prefix} · next ${safeBase(settings.next)} · folder ${settings.dir||'(browser downloads)'}`);
+
+</script>
+</body>
+</html>
