@@ -55,6 +55,14 @@ the app uses 60 KB).
 
 ---
 
+**Bulk read sizes.** The vendor driver only ever requests whole 512-byte packets, then reads
+any remainder on its own: the 62,268-byte white line arrives as 61,952 + 316, and main-image
+reads as 61,440/60,928 + 512. A single read whose length ends part-way through a packet, while
+the scanner still has data to send, fails on Linux usbfs with EOVERFLOW ("value too large for
+defined data type"). The app follows the vendor pattern for every frame.
+
+---
+
 ## 2. Status registers
 
 ### 0x41 — main status

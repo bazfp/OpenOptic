@@ -120,6 +120,8 @@ func mapErr(err error) error {
 		return errors.New("USB transfer timed out")
 	case errors.Is(err, syscall.ENODEV):
 		return errors.New("scanner disconnected")
+	case errors.Is(err, syscall.EOVERFLOW):
+		return errors.New("USB overflow: the scanner sent more data than this read asked for")
 	}
 	return err
 }
@@ -142,7 +144,10 @@ func (d *linuxDev) Bulk(ep uint8, data []byte, timeout time.Duration) (int, erro
 	bt := usbBulkTransfer{uint32(ep), uint32(len(data)), uint32(timeout.Milliseconds()), bufPtr(data)}
 	n, err := ioctl(d.fd, ioBulk, unsafe.Pointer(&bt))
 	runtime.KeepAlive(data)
-	return n, mapErr(err)
+	if err != nil {
+		return n, fmt.Errorf("bulk %s endpoint 0x%02x, %d bytes: %w", map[bool]string{true: "read", false: "write"}[ep&0x80 != 0], ep, len(data), mapErr(err))
+	}
+	return n, nil
 }
 
 func (d *linuxDev) Close() error {
