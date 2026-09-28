@@ -116,6 +116,20 @@ The scanner samples twice as many lines as columns (the official software steps 
 
 The sidecar records the method under `processing.verticalAveraging` and `processing.interpolation`, and each TIFF entry records `lineFilter`.
 
+## Dummy lines (experimental)
+
+**Advanced → Dummy lines** shortens the main scan. At 3600 and 7200 dpi the official software sets the GL843's LINESEL to 1 and 2: after every real CCD line it clocks out 1 or 2 unused lines. The datasheet gives their purpose only as resolving the "start/stop (discontinuous) problem", i.e. restarts after buffer-full backtracking.
+
+| Setting | 3600 dpi | 7200 dpi | Data rate needed |
+|---|---|---|---|
+| As recorded | 79 s (1 dummy line) | 3 min 57 s (2) | 2.75 / 3.66 MB/s |
+| One fewer | 40 s (0) | 2 min 38 s (1) | 5.49 / 5.49 MB/s |
+| None | 40 s (0) | 79 s (0) | 5.49 / 10.98 MB/s |
+
+Only the main scan changes: LINESEL is written in its start write, and its motor tables' cruise period is scaled by the same factor (14000 to 7000 at 3600 dpi; 42000 to 28000 or 14000 at 7200 dpi), so the carriage still moves the recorded number of steps per line. Line spacing, image size, colour offsets, LINCNT, exposure (LPERIOD), the calibration frames and the shading tables stay as recorded. The recorded white references were read with 1, 2 and 5 dummy lines and came out at the same level, so dummy lines do not lengthen the exposure.
+
+The costs: each line is exposed while the carriage moves 2 or 3 times further, so vertical detail is softer (closer to SANE's default); the page must sustain the higher data rate or it stops the scan; and without dummy lines a restart after backtracking may leave a visible band. This mode has not been tested on hardware. The frame sidecar records the setting under `acquisition.options.dummyLines` and `acquisition.scanTiming`.
+
 ## Removing frames from the roll list
 
 Select a frame and press **Remove … from list** to drop it from the roll list and the roll record JSON. Files on disk are never deleted by the page.
