@@ -173,6 +173,9 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
       <div class="field"><label for="pixels">Line doubling</label>
         <select id="pixels"><option value="square">average line pairs (default)</option><option value="lanczos">Lanczos-3 (sharper, less grain aliasing)</option><option value="full">keep all lines (2× height)</option></select></div>
       <p class="small">The scanner samples twice as many lines as columns. Averaging line pairs and Lanczos-3 both give square pixels. Lanczos-3 aligns the colours and reduces the lines in one step: vertical detail is kept better, with less grain aliasing and slightly less noise, at about 1–3 seconds' extra processing. Very hard edges may show a faint halo. “Keep all lines” saves every line with separate X/Y dpi tags; most programs display it stretched.</p>
+      <div class="field"><label for="dummyLines">Dummy lines</label>
+        <select id="dummyLines"><option value="recorded">as recorded (default)</option><option value="fewer">one fewer (faster)</option><option value="none">none (fastest)</option></select></div>
+      <p class="small" id="dummyNote">Experimental, untested on hardware. Skips the unused CCD lines the official software inserts (1 at 3600 dpi, 2 at 7200) and speeds the motor to match; image size and exposure are unchanged. Vertical detail becomes slightly softer, and data arrives faster (up to 11 MB/s), so check for bands.</p>
     </details>
   </section>
 
@@ -404,11 +407,12 @@ function scheduleLampOff(){
 async function acquire(key, requested=settings){
   const scanSettings={...requested};
   const p=CaptureRuntime.prepareProfile(CAPTURE_PROFILES[key],scanSettings); traceMark=trace.length;
-  log('',`sensor pixels: ${scanSettings.pixelSampling||'deletion'}; exposure: recorded (1×)`);
-  if(p.acquisitionOptions) log('w','Experimental sensor averaging: live calibration reads use averaging, but AFE/shading and comparison references are recorded in deletion mode. This is not fresh calibration.' );
+  const dl=p.acquisitionOptions?.dummyLines;
+  log('',`sensor pixels: ${scanSettings.pixelSampling||'deletion'}; exposure: recorded (1×); dummy lines: ${dl&&dl.used!==dl.recorded?`${dl.used} (recorded ${dl.recorded}), motor cruise ${p.motorCruise.recorded}→${p.motorCruise.used}, needs ${(p.scan.bytesPerSecond/1e6).toFixed(2)} MB/s`:'as recorded'}`);
+  if(p.acquisitionOptions?.pixelSampling==='average') log('w','Experimental sensor averaging: live calibration reads use averaging, but AFE/shading and comparison references are recorded in deletion mode. This is not fresh calibration.' );
   const hooks={check:checkCancel,log:m=>log('io',m),sleep:async ms=>{for(let left=ms;left>0;left-=50){checkCancel();await sleep(Math.min(left,50));}},
     progress:(frame,got,total)=>{if(frame===p.mainFrame)progress(got/total);}};
-  const scanning=()=>say(`Scanning ${key==='full7200'?'at 7200 dpi (about 4 minutes)':key==='full'?'at 3600 dpi (about 80 s)':'quick pass (about 16 s)'}…`,'busy');
+  const scanning=()=>say(`Scanning ${key==='full7200'?'at 7200 dpi':key==='full'?'at 3600 dpi':'quick pass'} (about ${p.scan.seconds>=100?Math.round(p.scan.seconds/60*2)/2+' min':Math.round(p.scan.seconds)+' s'})…`,'busy');
   if(!dry){
     // a complete previous scan leaves the carriage where the chip's own return parks it (as in the
     // recordings); anything else (connect, failure, stop, manual moves) gets a full homing
@@ -440,7 +444,7 @@ async function acquire(key, requested=settings){
   for(let attempt=1;;attempt++){
     lamp={};
     hooks.frameDone=async(i,data)=>{
-      if(scanSettings.lampCheck==='off'&&!p.acquisitionOptions) return;
+      if(scanSettings.lampCheck==='off'&&p.acquisitionOptions?.pixelSampling!=='average') return;
       const kind=i===p.lamp.line.frame?'line':i===p.lamp.dark.frame?'dark':'shading';
       const st=CaptureRuntime.whiteStats(data,p.frames[i]);
       const v=kind==='dark'?CaptureRuntime.darkVerdict(st,p.lamp.dark):CaptureRuntime.lampVerdict(kind,st,p.lamp[kind]);
@@ -501,12 +505,12 @@ const store={
 const KEY='opticfilm.roll.v1';
 const sep=(window.NATIVE_USB?.defaultDir||'').includes('\\')?'\\':'/';
 const defaults={dir:window.NATIVE_USB?.defaultDir?window.NATIVE_USB.defaultDir+sep+'Roll001':'',prefix:'Roll001_',next:1,digits:2,film:'neg',orientation:1,
-  tiff:'aligned',pixels:'square',profile:'full',jpeg:false,mirror:true,warm:1,keepLamp:true,lampCheck:'warn',blackLevel:true,pixelSampling:'deletion',exposureMultiplier:'1'};
+  tiff:'aligned',pixels:'square',profile:'full',jpeg:false,mirror:true,warm:1,keepLamp:true,lampCheck:'warn',blackLevel:true,pixelSampling:'deletion',exposureMultiplier:'1',dummyLines:'recorded'};
 let settings={...defaults}, records=[], pending=null, selected=null, rescan=null;
 try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s){ settings={...defaults,...s.settings}; records=s.records||[]; if(!s.v&&settings.warm===20) settings.warm=1; } }catch(e){}   // 20 s was the old default
 function persist(){ if(dry) return; try{ localStorage.setItem(KEY,JSON.stringify({v:2,settings,records:records.map(({large,...r})=>r)})); }catch(e){ log('w','could not remember the roll list in this browser: '+e.message); } }
 const bind=[['outDir','dir','text'],['prefix','prefix','text'],['nextNo','next','int'],['digits','digits','int'],['film','film','text'],['orient','orientation','int'],
-  ['tiffKind','tiff','text'],['pixels','pixels','text'],['profileSel','profile','text'],['saveJpeg','jpeg','check'],['mirror','mirror','check'],['warm','warm','int'],['keepLamp','keepLamp','check'],['lampCheck','lampCheck','text'],['blackLevel','blackLevel','check'],['pixelSampling','pixelSampling','text'],['exposureMultiplier','exposureMultiplier','text']];
+  ['tiffKind','tiff','text'],['pixels','pixels','text'],['profileSel','profile','text'],['saveJpeg','jpeg','check'],['mirror','mirror','check'],['warm','warm','int'],['keepLamp','keepLamp','check'],['lampCheck','lampCheck','text'],['blackLevel','blackLevel','check'],['pixelSampling','pixelSampling','text'],['exposureMultiplier','exposureMultiplier','text'],['dummyLines','dummyLines','text']];
 function toUI(){ for(const [id,k,t] of bind){ if(t==='check') $(id).checked=!!settings[k]; else $(id).value=settings[k]; } refreshName(); }
 function fromUI(){ for(const [id,k,t] of bind){ settings[k]=t==='check'?$(id).checked:t==='int'?parseInt($(id).value||'0',10):$(id).value.trim(); }
   const clean=Roll.cleanPrefix(settings.prefix); if(clean!==settings.prefix){ settings.prefix=clean; $('prefix').value=clean; } persist(); refreshName(); }
@@ -514,7 +518,12 @@ function refreshName(){
   let t; try{ t=Roll.fileNames(settings,settings.next).map(f=>f.name).join('  '); }catch(e){ t='—'; }
   $('nextName').textContent=t; $('scanLabel').textContent=!(connected||dry)?'Connect scanner':rescan!==null?`Rescan ${tifName(rescan)} (overwrite)`:`Scan & Save ${tifName(settings.next)}`;
   $('profileSel').title=DPI_INFO[settings.profile]||'';
+  for(const o of $('profileSel').options){ const s=scanSecs(o.value); o.textContent=`${DPI_LABEL[o.value]} · ${DPI_MB[o.value]} · ~${fmtSecs(s)}`; }
 }
+const DPI_LABEL={prescan:'1440 dpi',full:'3600 dpi',full7200:'7200 dpi'}, DPI_MB={prescan:'~16 MB',full:'~103 MB',full7200:'~411 MB'};
+const fmtSecs=s=>s>=100?`${Math.floor(s/60)} min${s%60>=15?' '+Math.round(s%60)+' s':''}`:`${Math.round(s)} s`;
+// main-pass time; calibration and positioning add a few seconds
+const scanSecs=key=>{ try{ return CaptureRuntime.prepareProfile(CAPTURE_PROFILES[key],{dummyLines:settings.dummyLines}).scan.seconds; }catch(e){ return CAPTURE_PROFILES[key].scan.seconds; } };
 const DPI_INFO={prescan:'Quick index scan: 1440 dpi, ~16 MB, ~16 s',full:'Full resolution: 3600 dpi, ~103 MB, ~80 s',full7200:'Maximum: 7200 dpi, ~411 MB, ~4 min, needs ~1.4 GB free memory'};
 const tifName=n=>{ try{ return (Roll.fileNames(settings,n).find(f=>f.kind==='tiff'||f.kind==='raw-tiff')||{name:safeBase(n)}).name; }catch(e){ return '—'; } };
 const safeBase=n=>{ try{ return Roll.baseName(settings.prefix,n,settings.digits); }catch(e){ return '—'; } };
@@ -705,7 +714,7 @@ $('pkNative').onclick=async()=>{
 };
 
 // ---------------------------------------------------------------- buttons, keys, guard
-function enableScan(){ ['pixelSampling','exposureMultiplier'].forEach(id=>$(id).disabled=operationActive||!!pending); const ok=(connected||dry)&&!pending&&!operationActive; $('bScan').disabled=(connected||dry)?!ok:operationActive; $('bPreview').disabled=!ok; ['bHome','bLamp','bReconnect'].forEach(i=>$(i).disabled=!connected||operationActive); $('bTrace').disabled=!(connected&&trace.length>traceMark); $('bStop').disabled=!connected; }
+function enableScan(){ ['pixelSampling','exposureMultiplier','dummyLines'].forEach(id=>$(id).disabled=operationActive||!!pending); const ok=(connected||dry)&&!pending&&!operationActive; $('bScan').disabled=(connected||dry)?!ok:operationActive; $('bPreview').disabled=!ok; ['bHome','bLamp','bReconnect'].forEach(i=>$(i).disabled=!connected||operationActive); $('bTrace').disabled=!(connected&&trace.length>traceMark); $('bStop').disabled=!connected; }
 function guard(fn){ return async()=>{ if(operationActive) return; operationActive=true; cancelFlag=false; enableScan(); $('bStop').disabled=!(connected||dry);
   try{ await fn(); }
   catch(e){ if(e instanceof Cancelled){ log('w','stopped'); say('Stopped. The carriage has been parked.'); try{ cancelFlag=false; await stopMotor(); await home(); }catch(_){} }

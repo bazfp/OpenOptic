@@ -91,7 +91,8 @@
       acquisition:{profile:profile.name,sourceCapture:profile.source,sourceCaptureSha256:profile.sha256,
         samplingDpi:{x:g.dpi,y:g.yres},delivered:{width:g.pixels,lines:g.lincnt},
         registers:f.regs,moves:profile.moves,
-        options:profile.acquisitionOptions||{pixelSampling:'deletion',exposureMultiplier:1,
+        scanTiming:profile.scan?{lineSel:profile.scan.lineSel,lineSeconds:profile.scan.lineSeconds,bytesPerSecond:profile.scan.bytesPerSecond,motorCruise:profile.motorCruise||'recorded'}:null,
+        options:profile.acquisitionOptions||{pixelSampling:'deletion',exposureMultiplier:1,dummyLines:{setting:'recorded',recorded:profile.scan?.lineSel??null,used:profile.scan?.lineSel??null},
           averagingReducesPixels:false,calibration:'recorded vendor AFE and shading'},
         illuminationCheck:p.lamp?{...p.lamp,reference:profile.lamp,limits:CaptureRuntime.LAMP_LIMITS}:null,
         hardwareShading:'recorded vendor shading tables applied by the scanner before USB transfer'},
@@ -119,7 +120,7 @@
 
   function manifest(settings,records){
     return {format:VERSION,roll:cleanPrefix(settings.prefix),updated:new Date().toISOString(),
-      settings:{digits:settings.digits,tiff:settings.tiff,mirror:settings.mirror!==false,pixels:settings.pixels,film:settings.film,orientation:settings.orientation,profile:settings.profile,pixelSampling:settings.pixelSampling||'deletion',exposureMultiplier:Number(settings.exposureMultiplier??1)},
+      settings:{digits:settings.digits,tiff:settings.tiff,mirror:settings.mirror!==false,pixels:settings.pixels,film:settings.film,orientation:settings.orientation,profile:settings.profile,pixelSampling:settings.pixelSampling||'deletion',exposureMultiplier:Number(settings.exposureMultiplier??1),dummyLines:settings.dummyLines||'recorded'},
       frames:records.map(({thumb,large,...r})=>r)};
   }
 

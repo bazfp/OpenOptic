@@ -18,21 +18,74 @@
   function prepareProfile(profile, options={}) {
     const pixelSampling=options.pixelSampling??'deletion';
     const exposureMultiplier=Number(options.exposureMultiplier??1);
+    const dummyLines=options.dummyLines??'recorded';
     const invalid=message=>{const e=new Error(message);e.name='ScanConfigurationError';throw e;};
     if(!['deletion','average'].includes(pixelSampling)) invalid('Unknown sensor pixel sampling mode.');
     if(![1,1.5,2,3,4].includes(exposureMultiplier)) invalid('Choose an exposure of 1×, 1.5×, 2×, 3× or 4×.');
     if(exposureMultiplier!==1) invalid('Longer exposure is saved but not implemented yet. Fresh AFE/shading calibration and coordinated motor timing are required. Select recorded exposure (1×) to scan.');
+    if(!['recorded','fewer','none'].includes(dummyLines)) invalid('Unknown dummy line setting.');
     if(!profile) invalid('Unknown scan profile.');
-    if(pixelSampling==='deletion') return profile; // Default wire sequence is unchanged.
-    const ops=profile.ops.map(op=>{
-      if(op.kind!=='control'||op.rt!==0x40||op.value!==0x83||op.data.length<2) return op;
-      const data=op.data.slice();
-      for(let i=0;i<data.length;i+=2) if(data[i]===0x03) data[i+1]|=0x40;
-      return {...op,data};
-    });
-    return {...profile,ops,frames:profile.frames.map(f=>({...f,regs:{...f.regs,3:f.regs[3]|0x40}})),
-      acquisitionOptions:{pixelSampling,exposureMultiplier,averagingReducesPixels:profile.dpi<7200,
-        calibration:'recorded deletion-mode AFE and shading; live checks are comparisons, not fresh calibration'}};
+    const recordedLines=profile.scan?profile.scan.lineSel:0;
+    const lineSel=dummyLines==='none'?0:dummyLines==='fewer'?Math.max(0,recordedLines-1):recordedLines;
+    if(pixelSampling==='deletion'&&lineSel===recordedLines) return profile; // Default wire sequence is unchanged.
+    let out={...profile,frames:profile.frames.map(f=>({...f,regs:{...f.regs}}))};
+    if(pixelSampling==='average'){
+      out.ops=out.ops.map(op=>{
+        if(op.kind!=='control'||op.rt!==0x40||op.value!==0x83||op.data.length<2) return op;
+        const data=op.data.slice();
+        for(let i=0;i<data.length;i+=2) if(data[i]===0x03) data[i+1]|=0x40;
+        return {...op,data};
+      });
+      out.frames.forEach(f=>{f.regs[3]|=0x40;});
+    }
+    if(lineSel!==recordedLines) out=withLineSel(out,recordedLines,lineSel);
+    out.acquisitionOptions={pixelSampling,exposureMultiplier,averagingReducesPixels:pixelSampling==='average'&&profile.dpi<7200,
+      dummyLines:{setting:dummyLines,recorded:recordedLines,used:lineSel},
+      calibration:pixelSampling==='average'?'recorded deletion-mode AFE and shading; live checks are comparisons, not fresh calibration':'recorded vendor AFE and shading'};
+    return out;
+  }
+
+  // Fewer CCD dummy lines (LINESEL, 0x1E bits 3-0) for the main scan only. A delivered line then
+  // takes lineSel+1 line periods instead of recorded+1, so the scan motor must cruise faster by the
+  // same factor to keep the recorded 14400/steps-per-line sampling: every main-scan table entry
+  // at the recorded cruise period C becomes C*(lineSel+1)/(recorded+1). Exposure (LPERIOD), the
+  // start step, geometry, LINCNT, calibration frames and shading are unchanged; the white
+  // references were recorded with 1, 2 and 5 dummy lines at the same level, so dummy lines do
+  // not lengthen the exposure. The recorded main scan inherits 0x1E from the positioning block, so
+  // the new value is written in the start write itself, just before 0x0F=1.
+  function withLineSel(profile,recorded,lineSel){
+    const ops=profile.ops, main=profile.mainFrame, factor=(lineSel+1)/(recorded+1);
+    const firstMainRead=ops.findIndex(o=>o.kind==='read'&&o.frame===main);
+    let startOp=-1;
+    for(let i=firstMainRead-1;i>=0;i--){ const o=ops[i]; if(o.kind==='control'&&o.rt===0x40&&o.value===0x83&&o.data.length>1&&o.data.some((v,j)=>j%2===0&&v===0x0f&&o.data[j+1]===1)){startOp=i;break;} }
+    let prevRead=-1; for(let i=startOp-1;i>=0;i--) if(ops[i].kind==='read'){prevRead=i;break;}
+    assert(firstMainRead>0&&startOp>prevRead&&prevRead>=0,'profile has no recognisable main-scan start');
+    // slot of each table write, from the RAM address register 0x5B (bit 0x40 set while writing)
+    let slot=null; const tables=[];
+    for(let i=0;i<startOp;i++){ const o=ops[i];
+      if(o.kind==='control'&&o.rt===0x40&&o.value===0x83&&o.data.length>1)
+        for(let j=0;j<o.data.length;j+=2) if(o.data[j]===0x5b) slot=(o.data[j+1]&0x40)?((o.data[j+1]>>3)&7):null;
+      if(o.kind==='write'&&i>prevRead&&slot!==null&&slot<=2) tables.push(i);
+    }
+    assert(tables.length>=1,'profile has no main-scan motor table');
+    const decode=d=>{ const b=bytes64(d), t=[]; for(let i=0;i+1<b.length;i+=2) t.push(b[i]|(b[i+1]<<8)); return t; };
+    const encode=t=>{ let bin=''; for(const v of t) bin+=String.fromCharCode(v&0xff,v>>8); return btoa(bin); };
+    const cruise=decode(ops[tables[0]].data).at(-1), next=Math.round(cruise*factor);
+    assert(Number.isInteger(cruise*factor)&&next>0&&next<=0xffff,'dummy line change does not give a whole motor period');
+    const lineReg=profile.frames[main].regs[0x1e];
+    assert(lineReg!==undefined&&(lineReg&0x0f)===recorded,'recorded main-scan LINESEL not found');
+    const newOps=ops.slice();
+    for(const i of tables){ const t=decode(ops[i].data); assert(t.at(-1)===cruise,'main-scan tables disagree');
+      newOps[i]={...ops[i],data:encode(t.map(v=>v===cruise?next:v))}; }
+    const lineVal=(lineReg&0xf0)|lineSel;
+    newOps[startOp]={...ops[startOp],data:insertBeforeStart(ops[startOp].data,lineVal)};
+    const frames=profile.frames.map((f,i)=>i===main?{...f,regs:{...f.regs,[0x1e]:lineVal}}:f);
+    const scan={...profile.scan,lineSel,lineSeconds:+(profile.scan.lineSeconds*factor).toFixed(6),
+      seconds:+(profile.scan.seconds*factor).toFixed(1),bytesPerSecond:Math.round(profile.scan.bytesPerSecond/factor)};
+    return {...profile,ops:newOps,frames,scan,motorCruise:{recorded:cruise,used:next}};
+  }
+  function insertBeforeStart(data,lineVal){
+    const out=[]; for(let j=0;j<data.length;j+=2){ if(data[j]===0x0f) out.push(0x1e,lineVal); out.push(data[j],data[j+1]); } return out;
   }
 
   async function run(profile, io, hooks={}) {
@@ -474,5 +527,5 @@
     return buf;
   }
 
-  globalThis.CaptureRuntime={prepareProfile,run,geometry,measureShifts,decode,levels,renderRGB,alignedFrame,previewPlanes,tiffHeader,renderPreview,whiteStats,lampVerdict,darkVerdict,LAMP_LIMITS};
+  globalThis.CaptureRuntime={prepareProfile,SCAN_LINE_SETTINGS:['recorded','fewer','none'],run,geometry,measureShifts,decode,levels,renderRGB,alignedFrame,previewPlanes,tiffHeader,renderPreview,whiteStats,lampVerdict,darkVerdict,LAMP_LIMITS};
 })();
