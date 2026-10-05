@@ -21,14 +21,17 @@ type simDev struct {
 
 func openDevice(vid, pid uint16) (Device, error) {
 	d := &simDev{events: make(chan byte, 8)}
-	d.events <- 0x08                             // the real scanner reports 0x08 as soon as the first interrupt read is opened
-	if os.Getenv("OPTICFILM_SIM_BUTTON") != "" { // developer aid: a fake button press every 1.5 s
+	d.events <- 0x08 // the position sensor's latched change, reported when the endpoint is first read
+	if os.Getenv("OPTICFILM_SIM_BUTTON") != "" {
+		// developer aid: front buttons A (0x04) and B (0x02) pressed alternately every 1.5 s
 		go func() {
+			v := byte(0x04)
 			for range time.Tick(1500 * time.Millisecond) {
 				select {
-				case d.events <- 0x01:
+				case d.events <- v:
 				default:
 				}
+				v ^= 0x06
 			}
 		}()
 	}

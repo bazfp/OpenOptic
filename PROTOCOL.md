@@ -64,13 +64,20 @@ defined data type"). The app follows the vendor pattern for every frame.
 ---
 
 **Interrupt endpoint (0x83, 1-byte packets).** The vendor software keeps one read pending on it
-from boot and re-submits after every reply; it never polls the GPIO registers. In the 7200 dpi
-capture it received two bytes, both `0x08`: one 4 ms after the read was first opened (a state
-report) and one 2.571 s after positioning move 1 started, which the software answered 0.8 ms
-later by stopping the move. No front button was pressed during the capture, so the button codes
-are unknown; the page's button monitor (Diagnostics) logs every event to find them. The datasheet
-describes GPIO1–4 as "hot key" inputs whose state is latched until read; this scanner configures
-GPIO1–7 as inputs (0x6F = 0x80).
+from boot and re-submits after every reply; it never polls the GPIO registers. Each byte is a mask
+of the GPIO inputs (register 0x6D, bit n-1 = GPIOn) that changed, reported once per falling edge:
+
+| Byte | GPIO | Source | Idle level in 0x6D (0x56 at rest) |
+|---|---|---|---|
+| `0x02` | GPIO2 | front button B, active low | 1 |
+| `0x04` | GPIO3 | front button A, active low | 1 |
+| `0x08` | GPIO4 | carriage/holder position sensor | 0 at rest |
+
+Button events and register changes were confirmed with the page's button monitor: one event per
+press, none on release, and 0x6D drops the button's bit while it is held. In the 7200 dpi capture
+the software received `0x08` 4 ms after first opening the read (a latched sensor change) and again
+2.571 s after positioning move 1 started, and stopped the move 0.8 ms later. The datasheet describes
+GPIO1-4 as "hot key" inputs latched until read; this scanner sets GPIO1-7 as inputs (0x6F = 0x80).
 
 ---
 
