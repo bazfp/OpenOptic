@@ -92,9 +92,12 @@ sequence above and add three facts; details in `CAPTURE_FINDINGS_COLOUR_ME_IR.md
   calibration (AFE gain ~0x37–0x3A, offsets ~0). Successive passes land 2–3 raw lines apart.
 - **RAMADDR (0x29–0x2B)** is set to 0 before each shading upload.
 - **The iSRD infrared job starts while the carriage is still returning** from the colour pass: before
-  its first motor start the vendor polls status 416 times with MOTORENB set (0xB5). The replay
-  collapses these into one poll that waits only while the motor really runs; replayed literally
-  against a parked carriage they cost ~17 s of idling.
+  its first motor start the vendor polls status 416 times with MOTORENB set (0xB5), then reads
+  0xFC (FEEDFSH latched by that return). A carriage parked by this app reads 0xDC: FEEDFSH is
+  clear and stays clear until the sequence's own first move. The replay therefore waits for
+  FEEDFSH only after it has started a move itself; before that it waits only while MOTORENB is
+  set (the 416 polls collapse to one such wait). Waiting for the recorded 0xFC stalled the
+  infrared pass until the 60 s readiness timeout.
 - **Multi-exposure is two complete sequences** (Kodak Gold capture): pass 2 recalibrates at 1×
   and differs only in its main scan (the four changes above). The long pass carries extra dark
   signal: long = slope·short + offset, offsets 870–2,040 counts with each pass's dark frame removed.
