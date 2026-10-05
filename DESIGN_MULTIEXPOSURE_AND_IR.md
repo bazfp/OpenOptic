@@ -12,7 +12,7 @@ show from what is proposed.
 | Vendor method (captured) | One main pass at 3× exposure, calibration at 1× | Full colour job, then a full second job with the IR LED |
 | Registers changed | LPERIOD 14,000→42,000, LINESEL 1→0, cruise 14,000→21,000, BUFSEL 0x10→0x08 | 0x03 0xBF→0xAF (white LED off), 0xA8 0x20→0x27 (GPIO27 = IR LED), IR calibration |
 | Key finding | Red clips on 63 % of a colour negative at 3×; needs a 1× image as well | Passes land 2.3–2.5 raw lines apart; IR has a 6.5 % cyan-dye ghost |
-| Proposed | Two passes (1× + 3×) merged, or a single pass with a shorter red exposure if that works | Colour pass + IR pass, registered, ghost removed, defects repaired |
+| Proposed | Two passes (1× + 3×) merged, the long pass used in the shadows, as SilverFast does | Colour pass + IR pass, registered, ghost removed, defects repaired |
 | Time at 3600 dpi | ≈ 3.7 min (SilverFast ME + IR: three passes, ≈ 5 min) (≈ 3 min with Dummy lines "none" on the 1× pass) | ≈ 3.3 min (194 s captured) |
 
 ## 2. Shared groundwork
@@ -63,11 +63,22 @@ No 1× image pass is in the capture. Calibration stays at 1× and the hardware s
 |---|---|---|---|
 | **A. Two-pass merge** | 1× + k× | Merge per pixel, use the long pass where it is not clipped | **What SilverFast does** (1× pass, then 3× pass, aligned and merged); proposed default |
 | **B. Long pass only** | k× | Fine where nothing clips (dense slides, B&W) | Option, warns when red clips |
-| **C. Single pass, shorter red** | 1 | LPERIOD 3×, EXPR set so red integrates 1× | **Experiment first** (would save a whole pass): EXPR/G/B exist ("exposure time for red/green/blue channel of CCD"), are 0 in every capture, and may not be wired on this sensor |
 
-Experiment for option C, without scanning film: run the calibration sequence with LPERIOD 42,000
-and EXPR = 14,000, then read the 128-line white reference. If red reads about the 1× level and
-green/blue about 3×, per-channel exposure works and option C becomes a single 2-minute pass.
+**Not pursued:** a single pass with a shorter red exposure (EXPR/EXPG/EXPB). SilverFast uses
+separate passes, so that is the proven route.
+
+**SilverFast's merge, measured** on its saved linear TIFF of this frame (`HDRScan = Yes`,
+`Gamma = 1`) against the two captured passes. The TIFF is mirrored left to right relative to the
+raw scan and sits 0.5 column off (its own resampling); no rotation.
+- Output brightness = the 1× pass (ratio 1.00 red, 1.00–1.05 green/blue): merged onto the 1×
+  scale.
+- Fine detail follows the 1× pass almost everywhere. The 3× pass contributes measurably only in
+  the darkest blue (share ≈ 0.2–0.3 below ~4 % of full scale at 1×, noisy), not wherever it is
+  unclipped. On this colour negative the densest areas still read 3–5 % of full scale at 1×, so
+  ME changes little; it matters for slides, dense B&W and over-exposed negatives.
+- The output is slightly smoother than either pass (some filtering or different line
+  resampling), and has two flat mid-grey blocks (32,640 in all channels) along the top-left and
+  bottom-right edges, purpose unknown.
 
 ### 3.3 Merge (option A)
 For each channel c, on linear data:
@@ -77,8 +88,11 @@ For each channel c, on linear data:
    green/blue detail (same image content, strong correlation).
 3. Estimate the real ratio k_c by regression where both passes are between 5 % and 80 % of full
    scale; do not trust the nominal 3 (measured 3.02 and 2.88).
-4. Blend weight w = 1 where the long pass is below 75 % of full scale, falling smoothly to 0 at
-   90 %. Output = w · long/k_c + (1 − w) · short.
+4. Blend weight by **how dark the 1× pass is**, as SilverFast does, not merely by whether the
+   long pass is unclipped: w = 1 where the local 1× level is below ~4 % of full scale, falling
+   smoothly to 0 at ~12 %, and forced to 0 wherever the long pass exceeds 75 % of full scale.
+   Keeping the 3× pass to the shadows limits the damage of any residual misregistration. Output
+   = w · long/k_c + (1 − w) · short. The thresholds are settings, tuned against SilverFast's TIFF.
 5. Write 16-bit linear at the 1× scale, so existing TIFFs, previews and converters see the same
    levels; only the noise drops (≈ √3 shot noise, 3× read noise where the long pass is used).
 
@@ -145,7 +159,7 @@ tuned against real masks.
 | IR | aligned colour 103 MB + raw IR 217 MB, reduced at once to a 36 MB plane |
 
 Both fit comfortably at 3600 dpi. At 7200 dpi (868 MB per raw pass) ME and IR need the second
-pass processed in stripes as it arrives; that is phase 7.
+pass processed in stripes as it arrives; that is phase 6.
 
 ## 6. User interface (proposed)
 - **Advanced → Exposure** becomes **Multi-exposure: off / 2 passes, long pass 2× / 3× / 4×**, with
@@ -161,16 +175,15 @@ pass processed in stripes as it arrives; that is phase 7.
 |---|---|---|
 | 1 | Capture analysis, findings, this design | done |
 | 2 | Channel-delay fallback fix; multi-sequence profile builder; `full-ir`; `withExposure(k)`; two-pass acquisition | Op-for-op equality with the captures; simulated-scanner tests for both jobs |
-| 3 | Option C experiment (per-channel exposure, white reference only) | Levels of R vs G/B |
-| 4 | ME merge (option A, and C if it works) | Fixture tests with synthetic data; statistics on the captured frames (no images in the repo) |
-| 5 | IR Detect: IR plane, registration, ghost removal, mask, saved files | Registration within 0.25 px on the captured frames; mask overlap with visible defects |
-| 6 | IR Repair | Before/after crops on the captured frame; no change outside the mask |
-| 7 | 7200 dpi and prescan variants, stripe processing | Needs captures at 7200 dpi |
+| 3 | ME merge (option A) | Fixture tests with synthetic data; compare with SilverFast's TIFF of the captured frame (statistics only, no images in the repo) |
+| 4 | IR Detect: IR plane, registration, ghost removal, mask, saved files | Registration within 0.25 px on the captured frames; mask overlap with visible defects |
+| 5 | IR Repair | Before/after crops on the captured frame; no change outside the mask |
+| 6 | 7200 dpi and prescan variants, stripe processing | Needs captures at 7200 dpi |
 
 ## 8. Open questions
 1. ~~ME: one pass or two?~~ SilverFast runs a 1× pass, then the 3× pass, aligns and merges them
    (`sfAlignmentMultiExposure`). Its saved linear TIFF of this frame is a reference for testing our merge.
 2. IR at 7200 dpi: worth a capture if you will use it.
 3. Do you scan B&W silver film? It decides how much effort goes into IR-failure detection.
-4. Is ~3.7 min per frame acceptable for ME at 3600 dpi, or should option C (single pass) be the
-   priority even though it is speculative?
+4. ME benefits slides and dense film far more than colour negatives (see 3.2): which film types
+   matter most to you decides whether ME or IR repair comes first.
