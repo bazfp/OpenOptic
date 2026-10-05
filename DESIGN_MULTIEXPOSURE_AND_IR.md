@@ -13,7 +13,7 @@ show from what is proposed.
 | Registers changed | LPERIOD 14,000→42,000, LINESEL 1→0, cruise 14,000→21,000, BUFSEL 0x10→0x08 | 0x03 0xBF→0xAF (white LED off), 0xA8 0x20→0x27 (GPIO27 = IR LED), IR calibration |
 | Key finding | Red clips on 63 % of a colour negative at 3×; needs a 1× image as well | Passes land 2.3–2.5 raw lines apart; IR has a 6.5 % cyan-dye ghost |
 | Proposed | Two passes (1× + 3×) merged, or a single pass with a shorter red exposure if that works | Colour pass + IR pass, registered, ghost removed, defects repaired |
-| Time at 3600 dpi | ≈ 3.7 min (≈ 3 min with Dummy lines "none" on the 1× pass) | ≈ 3.3 min (194 s captured) |
+| Time at 3600 dpi | ≈ 3.7 min (SilverFast ME + IR: three passes, ≈ 5 min) (≈ 3 min with Dummy lines "none" on the 1× pass) | ≈ 3.3 min (194 s captured) |
 
 ## 2. Shared groundwork
 
@@ -54,16 +54,16 @@ the B&W-measured 24.22/48.21 instead. Small change, benefits every colour scan.
 ## 3. Multi-exposure
 
 ### 3.1 What the capture shows
-One main pass at 3× exposure (one carriage pass, confirmed), linear (×3.02 green, ×2.88 blue), red 63 % clipped on this negative.
+The captured main pass is SilverFast's 3× pass (its 1× pass came from its cache; a fresh ME scan runs 1×, IR if enabled, then 3×), linear (×3.02 green, ×2.88 blue), red 63 % clipped on this negative.
 No 1× image pass is in the capture. Calibration stays at 1× and the hardware shading still applies.
 
 ### 3.2 Options
 
 | Option | Passes | How | Status |
 |---|---|---|---|
-| **A. Two-pass merge** | 1× + k× | Merge per pixel, use the long pass where it is not clipped | Fallback that always works |
-| **B. Long pass only** | k× | What the vendor does (one pass, confirmed); fine where nothing clips (dense slides, B&W) | Option, warns when red clips |
-| **C. Single pass, shorter red** | 1 | LPERIOD 3×, EXPR set so red integrates 1× | **Experiment first** (vendor speed without the red clipping): EXPR/G/B exist ("exposure time for red/green/blue channel of CCD"), are 0 in every capture, and may not be wired on this sensor |
+| **A. Two-pass merge** | 1× + k× | Merge per pixel, use the long pass where it is not clipped | **What SilverFast does** (1× pass, then 3× pass, aligned and merged); proposed default |
+| **B. Long pass only** | k× | Fine where nothing clips (dense slides, B&W) | Option, warns when red clips |
+| **C. Single pass, shorter red** | 1 | LPERIOD 3×, EXPR set so red integrates 1× | **Experiment first** (would save a whole pass): EXPR/G/B exist ("exposure time for red/green/blue channel of CCD"), are 0 in every capture, and may not be wired on this sensor |
 
 Experiment for option C, without scanning film: run the calibration sequence with LPERIOD 42,000
 and EXPR = 14,000, then read the 128-line white reference. If red reads about the 1× level and
@@ -168,8 +168,8 @@ pass processed in stripes as it arrives; that is phase 7.
 | 7 | 7200 dpi and prescan variants, stripe processing | Needs captures at 7200 dpi |
 
 ## 8. Open questions
-1. ~~ME: one pass or two?~~ One pass (confirmed). Still useful: the vendor's saved TIFF from that
-   scan, to see whether its red channel is clipped or filled from the preview.
+1. ~~ME: one pass or two?~~ SilverFast runs a 1× pass, then the 3× pass, aligns and merges them
+   (`sfAlignmentMultiExposure`). Its saved linear TIFF of this frame is a reference for testing our merge.
 2. IR at 7200 dpi: worth a capture if you will use it.
 3. Do you scan B&W silver film? It decides how much effort goes into IR-failure detection.
 4. Is ~3.7 min per frame acceptable for ME at 3600 dpi, or should option C (single pass) be the

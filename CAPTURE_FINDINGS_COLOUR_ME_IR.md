@@ -57,10 +57,16 @@ Reproduce with `tools/capture_extract.py` (register/AFE state per read, tables, 
 - The exposure is linear: signal is 3.02× (green) and 2.88× (blue) the normal pass at the same
   points, so the recorded shading (computed at 1×) still applies multiplicatively.
 - On colour negative, **63 % of the red channel is clipped** at 65,535 (the orange mask passes red
-  strongly); green and blue do not clip (p99.5 48,504 and 29,901). **The scan made one carriage
-  pass (confirmed by the user)**, so the vendor's "multi-exposure" is a single extended exposure.
-  The clipped red cannot be recovered from this scan; the vendor output either keeps the clipping
-  or fills it from the low-resolution preview. Checking the vendor's saved TIFF would tell which.
+  strongly); green and blue do not clip (p99.5 48,504 and 29,901).
+- **The capture holds only SilverFast's last pass.** SilverFast had the normal colour (and IR)
+  passes of this frame cached from the iSRD scan. Restarted, an ME scan with infrared enabled
+  runs three passes: normal colour, infrared, then this 3× pass. SilverFast (9.2.10) then merges
+  the 1× and 3× passes: its saved linear TIFF (`HDRScan = Yes`, `Gamma = 1`, 5,124 × 3,504, the
+  same size as the app's aligned 3600 dpi output) is at 1× scale (red median 23,478 against
+  23,481 for the 1× pass) with no clipped red. Its settings list `MultiExposure = TRUE` and a
+  filter `sfAlignmentMultiExposure`, so the passes are registered before merging. Its iSRD
+  settings record an IR offset estimate (`iSRD_ColOffset` −1, `iSRD_RowOffset` 0) and
+  `Maximum ISRD Offset = 20`.
 - Interrupt events: `0x08` at 10.477 s (9 ms before move 1 starts, as the read is opened) and at
   13.065 s (move 1 stop point).
 
