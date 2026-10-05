@@ -109,13 +109,22 @@ details summary{cursor:pointer;color:var(--ink2);font-size:13px}
 .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 16px;border-top:1px solid var(--line);background:var(--panel)}
 .controls .status{margin:0;flex:1 1 100%;order:10}
 .controls #bStop{margin-left:auto}
-.field{display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px;align-items:center;margin:7px 0}
-.field>label{line-height:1.25}
+.field{display:grid;grid-template-columns:116px minmax(0,1fr);gap:8px;align-items:center;margin:7px 0}
+.field>label{line-height:1.25;display:flex;align-items:center;gap:5px}
 [hidden]{display:none!important}
-button.info{all:unset;cursor:pointer;display:inline-grid;place-items:center;width:15px;height:15px;margin-left:5px;border:1px solid var(--dim);border-radius:50%;color:var(--dim);font:italic 600 10px/1 Georgia,serif;vertical-align:1px}
+button.info{all:unset;cursor:pointer;display:inline-grid;place-items:center;flex:none;width:15px;height:15px;border:1px solid var(--dim);border-radius:50%;color:var(--dim);font:italic 600 10px/1 Georgia,serif;vertical-align:1px}
 button.info:hover,button.info[aria-expanded=true]{color:var(--amber);border-color:var(--amber)}
 button.info:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
-aside p.help{margin:2px 0 8px;padding:7px 9px;border-left:2px solid var(--amber);background:rgba(255,255,255,.03)}
+aside .note{margin:2px 0 10px;padding:8px 10px 8px 11px;border-left:2px solid var(--amber);border-radius:0 4px 4px 0;background:rgba(255,255,255,.035);font-size:12px;line-height:1.45;color:var(--dim)}
+aside .note .lead{display:block;color:var(--ink);font-weight:600}
+aside .note ul{margin:6px 0 0;padding:0;list-style:none}
+aside .note li{position:relative;padding-left:11px;margin:4px 0}
+aside .note li::before{content:"";position:absolute;left:0;top:.6em;width:4px;height:4px;border-radius:50%;background:var(--amber);opacity:.7}
+aside .note li b{color:var(--ink);font-weight:600}
+aside .note .foot{display:block;margin-top:6px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px}
+aside .note .warn{color:var(--amber);font-weight:600}
+aside .note code{font-size:11px}
+aside .row{align-items:center}
 .field .next{word-break:normal;overflow-wrap:anywhere;line-height:1.5}
 .btnpair{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 0}
 .btnpair button{padding:7px 8px}
@@ -129,7 +138,7 @@ button.primary kbd{color:#1a1207;opacity:.6}
 .field .inline>.small{white-space:nowrap}
 .field.pressed>label{color:var(--amber)}
 .field>label{transition:color .2s}
-.check{display:flex;gap:8px;align-items:flex-start;margin:7px 0 7px 104px;line-height:1.3}
+.check{display:flex;gap:8px;align-items:flex-start;margin:7px 0 7px 124px;line-height:1.3}
 .check input{margin:2px 0 0;flex:none}
 select.dpi{font-size:16px;font-weight:600;color:var(--amber);border-color:var(--amber2);background:var(--panel2);padding:11px 12px;line-height:1.45;cursor:pointer}
 select.dpi:hover{border-color:var(--amber)}
@@ -164,15 +173,15 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
       <select id="film"><option value="neg">colour/B&amp;W negative</option><option value="pos">positive (slide)</option></select></div>
     <div class="field"><label for="orient">Orientation</label>
       <select id="orient"><option value="1">as scanned</option><option value="8">rotate 90° left</option><option value="6">rotate 90° right</option><option value="3">rotate 180°</option></select></div>
-    <label class="check"><input type="checkbox" id="mirror"> flip horizontally (mirror left–right)</label>
-    <div class="field"><label for="multiExposure">Multi-exposure</label>
+    <label class="check"><input type="checkbox" id="mirror"> flip horizontally (mirror)</label>
+    <div class="field"><label for="multiExposure">Multi&#8209;exposure</label>
       <select id="multiExposure"><option value="off">off</option><option value="range">extended range (linear)</option><option value="fusion">exposure fusion (HDR look)</option></select></div>
-    <p class="small" id="meNote">Multi-exposure always scans the frame twice (two passes): normally, then with a longer exposure (line period ×k, motor slowed to match; calibration stays at 1×). <b>Extended range</b> registers the passes, fits long = slope·short + offset per channel and blends them by their noise: shadows (dense negative areas) get the long pass's lower noise, highlights the 1× pass, and the TIFF stays linear 16-bit at the 1× scale for negative converters. <b>Exposure fusion</b> merges the passes Mertens-style (contrast, saturation, well-exposedness, Laplacian pyramids) into an inverted, tone-mapped positive for an artistic look; that TIFF is gamma-encoded, not for converters. 3600 dpi only. <b>Long pass exposure</b> sets only how long the second pass exposes; it never adds passes. Its line time is its exposure, so a k× pass takes k times a 40 s pass: 2× adds about 1 min 35 s, 3× about 2 min 15 s (shown beside each choice). Dummy lines are already dropped in every pass. In theory 2× cuts shadow noise to about 45–58 % of one pass and 3× to 32–50 % (less where the film's own grain dominates), so 2× is the quicker compromise.</p>
+    <div class="note" id="meNote"><b class="lead">Scans the frame twice — a normal pass, then a longer exposure — and merges them for cleaner shadows.</b><ul><li><b>Extended range</b> — linear 16-bit TIFF for negative converters. Dense areas get the long pass’s lower noise; highlights stay from the normal pass.</li><li><b>Exposure fusion</b> — tone-mapped positive with an HDR look. Not for converters.</li><li><b>Long pass</b> — the 2nd pass’s exposure only; never more passes. Each 1× adds ~40 s. 2× roughly halves shadow noise; 3× cuts it to a third–half.</li></ul><span class="foot">3600 dpi only. Calibration stays at 1×, as in SilverFast.</span></div>
     <div class="field"><label for="meFactor">Long pass</label>
       <select id="meFactor"><option value="2">2× exposure</option><option value="3">3× exposure (as SilverFast)</option><option value="4">4× exposure</option></select></div>
     <div class="field"><label for="infrared">Infrared</label>
       <select id="infrared"><option value="off">off</option><option value="repair">dust &amp; scratch repair</option><option value="detect">detect only</option></select></div>
-    <p class="small">Adds an infrared pass (3600 dpi). The registered infrared is always saved as a 4th channel of the TIFF (RGBI, 16-bit, like SilverFast's 64-bit HDRi), and a defect mask PNG alongside. Dye images are transparent to IR, so dust and scratches show as dark marks. The pass is registered on the defects, the faint cyan-dye ghost is removed, and the mask is built from the IR transmission. <b>Repair</b> fills compact defects by exemplar inpainting from nearby film texture (keeps grain) and corrects large faint ones by their IR transmission; a mask PNG is saved. <b>Detect only</b> leaves the colour untouched, for repair in another program. Not for B&amp;W silver film or Kodachrome (they block IR; detected and skipped).</p>
+    <div class="note"><b class="lead">Adds an infrared pass that finds dust and scratches: film dyes are transparent to IR, dirt isn’t.</b><ul><li><b>Repair</b> — small defects are filled from nearby film texture (grain kept); large faint marks are corrected by their IR density.</li><li><b>Detect only</b> — colour untouched, for repair in another program.</li><li><b>Always saved</b> — IR as the TIFF’s 4th channel (RGBI) and an <code>_irmask.png</code>.</li></ul><span class="foot"><span class="warn">Not for B&amp;W silver film or Kodachrome</span> (they block IR; detected and skipped). 3600 dpi only, adds ~55 s.</span></div>
     <div class="btnpair"><button id="bNextFree">Next free number</button><button id="bNewRoll">New roll…</button></div>
   </section>
 
@@ -185,7 +194,7 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
       <div class="field"><label for="lampCheck">Illumination check</label>
         <select id="lampCheck"><option value="warn">warn (recommended)</option><option value="wait">wait and retry</option><option value="off">off</option></select></div>
       <label class="check"><input type="checkbox" id="blackLevel"> correct black level (recommended)</label>
-      <p class="small">Black-level correction uses the dark calibration frame. TIFFs hold the scanner's linear 16-bit data: not inverted or colour balanced, ready for a negative converter. Film type affects only the preview. Orientation is stored as the TIFF orientation tag.</p>
+      <div class="note"><b class="lead">TIFFs hold the scanner’s linear 16-bit data — not inverted or colour balanced, ready for a negative converter.</b><ul><li><b>Black-level correction</b> uses the dark calibration frame. Keep it on.</li><li><b>Film type</b> only changes the preview; <b>orientation</b> is stored as a TIFF tag.</li></ul><span class="foot">Exception: exposure fusion saves a positive.</span></div>
     </details>
   </section>
 
@@ -193,21 +202,21 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
     <details id="advPanel"><summary>Advanced</summary>
       <div class="field"><label for="pixelSampling">Sensor pixels</label>
         <select id="pixelSampling"><option value="deletion">deletion (default)</option><option value="average">averaging (experimental)</option></select></div>
-      <p class="small">Sensor averaging applies to calibration reads, framing and frame scans. It reduces horizontal sampling at 1440/3600 dpi; there is no reduction at 7200 dpi. Recorded shading remains in use, so live level checks compare against a deletion-mode reference. This is separate from output line-pair averaging.</p>
+      <div class="note"><b class="lead">Leave on deletion unless you are experimenting.</b><ul><li><b>Averaging</b> combines neighbouring sensor pixels at 1440/3600 dpi; no effect at 7200 dpi.</li><li>Shading stays the recorded (deletion-mode) one, so live level checks compare against it.</li></ul><span class="foot">Experimental, not verified on hardware. Separate from line doubling.</span></div>
       <div class="field"><label for="warm">LED warm-up</label><div class="inline"><input type="number" id="warm" min="0" max="120" step="1" style="width:70px"><span class="small">seconds (default 1)</span></div></div>
-      <p class="small">Warm-up applies only when the LED has been off.</p>
+      <div class="note"><b class="lead">Only applies when the LED has been off.</b></div>
       <label class="check"><input type="checkbox" id="keepLamp"> keep the LED on between frames (off after 15 min idle)</label>
       <div class="field"><label for="pixels">Line doubling</label>
-        <select id="pixels"><option value="lanczos">Lanczos-3 (default: sharper, less grain aliasing)</option><option value="square">average line pairs</option><option value="full">keep all lines (2× height)</option></select></div>
-      <p class="small">The scanner samples twice as many lines as columns. Averaging line pairs and Lanczos-3 both give square pixels. Lanczos-3 aligns the colours and reduces the lines in one step: vertical detail is kept better, with less grain aliasing and slightly less noise, at about 1–3 seconds' extra processing. Very hard edges may show a faint halo. “Keep all lines” saves every line with separate X/Y dpi tags; most programs display it stretched.</p>
+        <select id="pixels"><option value="lanczos">Lanczos-3 (default)</option><option value="square">average line pairs</option><option value="full">keep all lines (2× height)</option></select></div>
+      <div class="note"><b class="lead">The scanner reads twice as many lines as columns; this turns them into square pixels.</b><ul><li><b>Lanczos-3</b> (default) — sharpest, least grain aliasing, ~1–3 s extra. A faint halo is possible on very hard edges.</li><li><b>Average line pairs</b> — simple, slightly softer.</li><li><b>Keep all lines</b> — 2× height with separate X/Y dpi; most programs show it stretched.</li></ul></div>
       <div class="field"><label for="dummyLines">Dummy lines</label>
-        <select id="dummyLines"><option value="none">none (fastest, default)</option><option value="fewer">one fewer</option><option value="recorded">as recorded (Plustek timing)</option></select></div>
-      <p class="small" id="dummyNote">Plustek inserts unused CCD lines between real ones (1 at 3600 dpi, 2 at 7200). The default skips them and speeds the motor to match, as SANE does and as SilverFast itself does for its long-exposure pass: 3600 dpi in about 40 s instead of 80 s. Image size and exposure are unchanged; vertical detail is slightly softer than with Plustek timing.</p>
+        <select id="dummyLines"><option value="none">none (default)</option><option value="fewer">one fewer</option><option value="recorded">as recorded (Plustek timing)</option></select></div>
+      <div class="note" id="dummyNote"><b class="lead">None (default) halves the scan time: 3600 dpi in ~40 s instead of 80 s.</b><ul><li>Skips the unused CCD lines Plustek inserts (1 at 3600 dpi, 2 at 7200), as SANE does and as SilverFast does for its long pass.</li><li>Same image size and exposure; vertical detail is slightly softer than Plustek timing.</li></ul></div>
       <div class="field" id="btn3Row"><label for="btn3">Front button A</label>
         <select id="btn3"><option value="scan">Scan &amp; Save</option><option value="preview">Check framing</option><option value="stop">Stop</option><option value="none">nothing</option></select></div>
       <div class="field" id="btn2Row"><label for="btn2">Front button B</label>
         <select id="btn2"><option value="scan">Scan &amp; Save</option><option value="preview">Check framing</option><option value="stop">Stop</option><option value="none">nothing</option></select></div>
-      <p class="small">A is the button on GPIO3 (event 0x04), B the one on GPIO2 (event 0x02). Pressing one highlights its row here, so you can tell them apart. Presses are ignored while the scanner is busy, unless set to Stop.</p>
+      <div class="note"><b class="lead">Choose what each front button does.</b><ul><li><b>A</b> = GPIO3 (event 0x04), <b>B</b> = GPIO2 (event 0x02). Pressing one highlights its row.</li><li>Ignored while the scanner is busy, unless set to Stop.</li></ul></div>
     </details>
   </section>
 
@@ -215,9 +224,9 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
     <details><summary>Diagnostics</summary>
       <div class="row"><button id="bHome" disabled>Home carriage</button><button id="bLamp" disabled>LED on/off</button><button id="bReconnect" disabled>Reconnect scanner</button></div>
       <div class="row"><button id="bMonitor" disabled>Monitor buttons (60 s)</button></div>
-      <p class="small">The button monitor logs every scanner event and every change of the GPIO registers (0x6C/0x6D) while you press the front buttons. Copy the log lines it ends with, so the buttons can be mapped to scanning.</p>
+      <div class="note"><b class="lead">Logs every button press for 60 s.</b><ul><li>Records each scanner event and GPIO change (0x6C/0x6D). Copy the final log lines to map new buttons.</li></ul></div>
       <div class="row"><button id="bTrace" disabled>Save USB trace of last scan</button><button id="bDry">Dry run (no scanner)</button></div>
-      <p class="small">The trace is saved in the roll folder; check it with <code>tools/compare_trace.py</code>. Dry run uses a simulated scanner and writes real files, so you can check naming and folders. <a href="/experimental" style="color:var(--amber)">Experimental page</a> (custom resolution, crop, IR; unverified).</p>
+      <div class="note"><b class="lead">Tools for checking the app.</b><ul><li><b>USB trace</b> — saved in the roll folder; check it with <code>tools/compare_trace.py</code>.</li><li><b>Dry run</b> — simulated scanner writing real files, to test naming and folders.</li><li><a href="/experimental" style="color:var(--amber)">Experimental page</a> — custom resolution, crop, IR; unverified.</li></ul></div>
     </details>
   </section>
 </aside>
@@ -633,11 +642,11 @@ let settings={...defaults}, records=[], pending=null, selected=null, rescan=null
 try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s){ settings={...defaults,...s.settings}; records=s.records||[]; if(!s.v&&settings.warm===20) settings.warm=1; if((s.v||0)<3&&settings.dummyLines==='recorded') settings.dummyLines='none'; delete settings.exposureMultiplier; if((s.v||0)<4&&settings.pixels==='square') settings.pixels='lanczos'; } }catch(e){}   // 20 s was the old default
 function persist(){ if(dry) return; try{ localStorage.setItem(KEY,JSON.stringify({v:4,settings,records:records.map(({large,...r})=>r)})); }catch(e){ log('w','could not remember the roll list in this browser: '+e.message); } }
 // sidebar notes: hidden behind an (i) beside the control they describe
-for(const p of document.querySelectorAll('aside p.small')){
+for(const p of document.querySelectorAll('aside .note')){
   const prev=p.previousElementSibling; if(!prev) continue;
   const host=prev.matches('.field')?(prev.querySelector(':scope>label')||prev.firstElementChild):prev;
   const b=document.createElement('button'); b.type='button'; b.className='info'; b.textContent='i'; b.title='Explain'; b.setAttribute('aria-label','Explain this option'); b.setAttribute('aria-expanded','false');
-  p.hidden=true; p.classList.add('help');
+  p.hidden=true;
   b.addEventListener('click',e=>{ e.preventDefault(); e.stopPropagation(); p.hidden=!p.hidden; b.setAttribute('aria-expanded',String(!p.hidden)); });
   host.appendChild(b);
 }
@@ -655,7 +664,7 @@ function refreshName(){
   $('meFactor').closest('.field').hidden=settings.multiExposure==='off';   // only the second pass's exposure
   $('profileSel').title=($('profileSel').selectedOptions[0]?.title||'')+'\n'+(DPI_INFO[settings.profile]||'');
   const base=passSecs('full',{dummyLines:settings.dummyLines});
-  for(const o of $('meFactor').options){ const k=Number(o.value); o.textContent=`${k}× exposure${k===3?' (SilverFast)':''} · +${fmtSecs(passSecs('full',{dummyLines:settings.dummyLines,exposureMultiplier:k})+15)}`; }
+  for(const o of $('meFactor').options){ const k=Number(o.value); o.textContent=`${k}×${k===3?' (SilverFast)':''} · +${fmtSecs(passSecs('full',{dummyLines:settings.dummyLines,exposureMultiplier:k})+15)}`; }
 }
 const DPI_LABEL={prescan:'1440 dpi',full:'3600 dpi',full7200:'7200 dpi'}, DPI_MB={prescan:'~16 MB',full:'~103 MB',full7200:'~411 MB'};
 const fmtSecs=s=>s>=100?`${Math.floor(s/60)} min${s%60>=15?' '+Math.round(s%60)+' s':''}`:`${Math.round(s)} s`;
