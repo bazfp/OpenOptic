@@ -198,7 +198,7 @@
               const ev=await moveEvents.next(Math.min(50,left));
               if(!ev) continue;
               const at=Math.round(now()-moveStartedAt);
-              if(ev.value===POSITION_EVENT&&now()>=earliest){ source='scanner event'; break; }
+              if((ev.value&POSITION_EVENT)&&now()>=earliest){ source='scanner event'; break; }
               log(`positioning move: ignored scanner event 0x${ev.value.toString(16).padStart(2,'0')} at +${at} ms`);
             }
           } else {
@@ -399,8 +399,9 @@
   // the 128-line white frame (flicker) may be at most 0.6 % (official: 0.02-0.24 %).
   // 256 KB per bulk transfer (the helper allows 1 MB); big enough to hide round-trip latency,
   // small enough for a smooth progress bar and for usbfs/WinUSB to handle comfortably.
-  // Positioning event: the byte the scanner sends on its interrupt endpoint when move 1 reaches
-  // its stop point. Earlier events (below half the recorded time) or other values are ignored;
+  // Positioning event: the scanner's interrupt byte is a mask of GPIO inputs that changed; bit
+  // 0x08 (GPIO4, the position sensor) marks move 1 reaching its stop point. Front buttons are 0x02
+  // and 0x04, so a press during the move cannot be taken for it. Events without that bit, or below half the recorded time, are ignored;
   // without the event the move is stopped by timer EVENT_GRACE_MS after the recorded moment.
   const POSITION_EVENT=0x08, EVENT_EARLIEST=0.5, EVENT_GRACE_MS=150;
   const CHUNK=0x40000, PACKET=512, THROUGHPUT_GRACE_S=6, THROUGHPUT_MIN=0.9;

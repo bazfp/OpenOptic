@@ -107,6 +107,8 @@ button.primary kbd{color:#1a1207;opacity:.6}
 .field .inline>input[type=text]{flex:1;min-width:0}
 .field .inline>input[type=number]{width:90px}
 .field .inline>.small{white-space:nowrap}
+.field.pressed>label{color:var(--amber)}
+.field>label{transition:color .2s}
 .check{display:flex;gap:8px;align-items:flex-start;margin:7px 0 7px 104px;line-height:1.3}
 .check input{margin:2px 0 0;flex:none}
 select.dpi{font-size:16px;font-weight:600;color:var(--amber);border-color:var(--amber2);background:var(--panel2);padding:11px 12px;line-height:1.45;cursor:pointer}
@@ -176,6 +178,11 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
       <div class="field"><label for="dummyLines">Dummy lines</label>
         <select id="dummyLines"><option value="recorded">as recorded (default)</option><option value="fewer">one fewer (faster)</option><option value="none">none (fastest)</option></select></div>
       <p class="small" id="dummyNote">Experimental, untested on hardware. Skips the unused CCD lines the official software inserts (1 at 3600 dpi, 2 at 7200) and speeds the motor to match; image size and exposure are unchanged. Vertical detail becomes slightly softer, and data arrives faster (up to 11 MB/s), so check for bands.</p>
+      <div class="field" id="btn3Row"><label for="btn3">Front button A</label>
+        <select id="btn3"><option value="scan">Scan &amp; Save</option><option value="preview">Check framing</option><option value="stop">Stop</option><option value="none">nothing</option></select></div>
+      <div class="field" id="btn2Row"><label for="btn2">Front button B</label>
+        <select id="btn2"><option value="scan">Scan &amp; Save</option><option value="preview">Check framing</option><option value="stop">Stop</option><option value="none">nothing</option></select></div>
+      <p class="small">A is the button on GPIO3 (event 0x04), B the one on GPIO2 (event 0x02). Pressing one highlights its row here, so you can tell them apart. Presses are ignored while the scanner is busy, unless set to Stop.</p>
     </details>
   </section>
 
@@ -358,12 +365,11 @@ async function nativeOpen(){
 if(window.NATIVE_USB) addEventListener('pagehide',()=>{ fetch('/api/close',{method:'POST',headers:{'X-Token':window.NATIVE_USB.token},keepalive:true}).catch(()=>{}); });
 
 // ---------------------------------------------------------------- scanner events (interrupt endpoint)
-// The scanner reports events on its interrupt endpoint (0x83): one byte, 0x08 in the captures,
-// sent once when the endpoint is first read and again when the first positioning move reaches
-// its stop point (the vendor stops the move 0.8 ms later). The front buttons presumably report
-// here too. One listener runs while connected; the scan sequence and the button monitor read
+// The scanner reports GPIO input changes on its interrupt endpoint (0x83), one byte per event:
+// the front buttons (0x04, 0x02) and the position sensor (0x08) whose event the vendor answers by
+// stopping positioning move 1, 0.8 ms later. One listener runs while connected; the scan sequence and the button monitor read
 // events through cursors, and every event is logged.
-const scannerEvents={state:'off',seq:0,list:[],waiters:new Set(),run:0,firstOfRun:0};
+const scannerEvents={state:'off',seq:0,list:[],waiters:new Set(),run:0};
 function scannerEventCursor(){
   let since=scannerEvents.seq;
   return {available:()=>scannerEvents.state==='on',
@@ -376,13 +382,38 @@ function scannerEventCursor(){
 }
 function scannerEvent(bytes){
   const e={seq:++scannerEvents.seq,value:bytes[0],bytes:[...bytes],t:performance.now()};
-  const initial=scannerEvents.firstOfRun===0; if(initial) scannerEvents.firstOfRun=e.seq;
   scannerEvents.list.push(e); if(scannerEvents.list.length>200) scannerEvents.list.shift();
-  log('ok',`scanner event ${[...bytes].map(b=>hex(b)).join(' ')}${initial?' (initial state report when listening starts)':''}`);
+  log('ok',`scanner event ${[...bytes].map(b=>hex(b)).join(' ')}: ${eventMeaning(e.value)}`);
   for(const w of [...scannerEvents.waiters]) w.done(e);
+  frontButtons(e);
+}
+// The event byte is a mask of the GPIO inputs that changed (bit n-1 = GPIOn), sent on the
+// falling edge: the two front buttons are GPIO3 (0x04) and GPIO2 (0x02), active low, one event
+// per press; GPIO4 (0x08) is the carriage/holder position sensor that ends positioning move 1.
+const FRONT_BUTTONS=[{bit:0x04,gpio:3,key:'btn3',name:'A'},{bit:0x02,gpio:2,key:'btn2',name:'B'}];
+function eventMeaning(v){
+  const parts=[]; if(v&0x08) parts.push('position sensor (GPIO4)');
+  for(const b of FRONT_BUTTONS) if(v&b.bit) parts.push(`front button ${b.name} (GPIO${b.gpio})`);
+  if(v&~0x0E) parts.push(`unknown bits ${hex(v&~0x0E)}`);
+  return parts.join(' + ')||'no bits set';
+}
+function frontButtons(e){
+  for(const b of FRONT_BUTTONS){
+    if(!(e.value&b.bit)) continue;
+    const row=$(b.key+'Row'); row.classList.add('pressed'); setTimeout(()=>row.classList.remove('pressed'),600);
+    if(monitoring) continue;
+    const action=settings[b.key], what=`front button ${b.name}`;
+    if(action==='none') continue;
+    if(action==='stop'){ if(operationActive){ log('ok',`${what}: Stop`); $('bStop').click(); } continue; }
+    if(operationActive){ log('w',`${what}: ignored, the scanner is busy`); continue; }
+    if(pending||$('picker').open){ log('w',`${what}: ignored (${pending?'save or discard the unsaved frame first':'folder dialog open'})`); continue; }
+    const target=action==='scan'?'bScan':'bPreview';
+    if($(target).disabled){ log('w',`${what}: ignored, ${action==='scan'?'scanning':'framing'} is not available now`); continue; }
+    log('ok',`${what}: ${action==='scan'?'Scan & Save':'Check framing'}`); $(target).click();
+  }
 }
 async function startScannerEvents(){
-  const run=++scannerEvents.run, d=dev; scannerEvents.firstOfRun=0;
+  const run=++scannerEvents.run, d=dev;
   const ep=d.configuration.interfaces[0].alternate.endpoints.find(e=>e.type==='interrupt'&&e.direction==='in');
   if(!ep){ scannerEvents.state='unsupported'; log('w','no interrupt endpoint listed: scanner events unavailable, positioning uses the recorded timing'); return; }
   const len=Math.max(1,Math.min(64,ep.packetSize||1));
@@ -565,12 +596,12 @@ const store={
 const KEY='opticfilm.roll.v1';
 const sep=(window.NATIVE_USB?.defaultDir||'').includes('\\')?'\\':'/';
 const defaults={dir:window.NATIVE_USB?.defaultDir?window.NATIVE_USB.defaultDir+sep+'Roll001':'',prefix:'Roll001_',next:1,digits:2,film:'neg',orientation:1,
-  tiff:'aligned',pixels:'square',profile:'full',jpeg:false,mirror:true,warm:1,keepLamp:true,lampCheck:'warn',blackLevel:true,pixelSampling:'deletion',exposureMultiplier:'1',dummyLines:'recorded'};
+  tiff:'aligned',pixels:'square',profile:'full',jpeg:false,mirror:true,warm:1,keepLamp:true,lampCheck:'warn',blackLevel:true,pixelSampling:'deletion',exposureMultiplier:'1',dummyLines:'recorded',btn3:'scan',btn2:'preview'};
 let settings={...defaults}, records=[], pending=null, selected=null, rescan=null;
 try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s){ settings={...defaults,...s.settings}; records=s.records||[]; if(!s.v&&settings.warm===20) settings.warm=1; } }catch(e){}   // 20 s was the old default
 function persist(){ if(dry) return; try{ localStorage.setItem(KEY,JSON.stringify({v:2,settings,records:records.map(({large,...r})=>r)})); }catch(e){ log('w','could not remember the roll list in this browser: '+e.message); } }
 const bind=[['outDir','dir','text'],['prefix','prefix','text'],['nextNo','next','int'],['digits','digits','int'],['film','film','text'],['orient','orientation','int'],
-  ['tiffKind','tiff','text'],['pixels','pixels','text'],['profileSel','profile','text'],['saveJpeg','jpeg','check'],['mirror','mirror','check'],['warm','warm','int'],['keepLamp','keepLamp','check'],['lampCheck','lampCheck','text'],['blackLevel','blackLevel','check'],['pixelSampling','pixelSampling','text'],['exposureMultiplier','exposureMultiplier','text'],['dummyLines','dummyLines','text']];
+  ['tiffKind','tiff','text'],['pixels','pixels','text'],['profileSel','profile','text'],['saveJpeg','jpeg','check'],['mirror','mirror','check'],['warm','warm','int'],['keepLamp','keepLamp','check'],['lampCheck','lampCheck','text'],['blackLevel','blackLevel','check'],['pixelSampling','pixelSampling','text'],['exposureMultiplier','exposureMultiplier','text'],['dummyLines','dummyLines','text'],['btn3','btn3','text'],['btn2','btn2','text']];
 function toUI(){ for(const [id,k,t] of bind){ if(t==='check') $(id).checked=!!settings[k]; else $(id).value=settings[k]; } refreshName(); }
 function fromUI(){ for(const [id,k,t] of bind){ settings[k]=t==='check'?$(id).checked:t==='int'?parseInt($(id).value||'0',10):$(id).value.trim(); }
   const clean=Roll.cleanPrefix(settings.prefix); if(clean!==settings.prefix){ settings.prefix=clean; $('prefix').value=clean; } persist(); refreshName(); }

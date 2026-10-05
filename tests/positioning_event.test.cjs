@@ -37,6 +37,8 @@ async function scan(key,{events,available=true}={}){
     const noisy=await scan(key,{events:[{at:300,value:0x08},{at:1500,value:0x20},{at:2400,value:0x08}]});
     assert(Math.abs(noisy.stop-2400)<=1,`${key}: early/other events ignored (${noisy.stop})`);
     assert.equal(noisy.logs.filter(l=>/ignored scanner event/.test(l)).length,2);
+    const buttons=await scan(key,{events:[{at:2000,value:0x04},{at:2100,value:0x02},{at:2450,value:0x0c}]});
+    assert(Math.abs(buttons.stop-2450)<=1,`${key}: button presses ignored, sensor bit with a button still counts (${buttons.stop})`);
     const none=await scan(key,{events:[]});
     assert(Math.abs(none.stop-(none.recorded+150))<=50,`${key}: timer fallback (${none.stop})`); assert.match(none.positioned.source,/timer/);
     const unsupported=await scan(key,{events:[{at:1000,value:0x08}],available:false});
