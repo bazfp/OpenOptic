@@ -67,6 +67,10 @@ Reproduce with `tools/capture_extract.py` (register/AFE state per read, tables, 
   filter `sfAlignmentMultiExposure`, so the passes are registered before merging. Its iSRD
   settings record an IR offset estimate (`iSRD_ColOffset` −1, `iSRD_RowOffset` 0) and
   `Maximum ISRD Offset = 20`.
+- SilverFast's merge, measured against both passes: brightness = 1× pass; fine detail follows the
+  1× pass almost everywhere, the 3× pass only in the darkest blue (below ~4 % of full scale). On
+  this colour negative ME changes little. The TIFF is mirrored left to right and 0.5 column off
+  the raw scan, slightly smoother, with two flat mid-grey (32,640) blocks along opposite edges.
 - Interrupt events: `0x08` at 10.477 s (9 ms before move 1 starts, as the read is opened) and at
   13.065 s (move 1 stop point).
 
