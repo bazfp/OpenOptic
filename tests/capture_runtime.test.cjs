@@ -2,7 +2,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
 require('../capture_profiles.js');require('../capture_runtime.js');
 (async()=>{
   for(const [name,p] of Object.entries(CAPTURE_PROFILES)){
-    const expected=p.ops.filter(o=>o.kind==='control'||o.kind==='write');let at=0,frame=-1,offset=0,budget=0,inserted=0,insertStep=0;
+    const expected=CaptureRuntime.collapseRecordedWaits(p.ops).filter(o=>o.kind==='control'||o.kind==='write');/* recorded waits for an earlier move collapse to one poll */let at=0,frame=-1,offset=0,budget=0,inserted=0,insertStep=0;
     // The only permitted additions are addressed status polls (0x83<-0x41, ack, 0x84), which the
     // runtime issues while waiting for a positioning move; everything recorded must follow in order.
     const isAddr41=o=>o.rt===0x40&&o.value===0x83&&o.data.length===1&&o.data[0]===0x41;

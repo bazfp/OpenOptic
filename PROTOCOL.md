@@ -91,6 +91,10 @@ sequence above and add three facts; details in `CAPTURE_FINDINGS_COLOUR_ME_IR.md
   LED; the IR dark frame uses 0xA8 = 0x23. The IR job is a complete second sequence with its own
   calibration (AFE gain ~0x37–0x3A, offsets ~0). Successive passes land 2–3 raw lines apart.
 - **RAMADDR (0x29–0x2B)** is set to 0 before each shading upload.
+- **The iSRD infrared job starts while the carriage is still returning** from the colour pass: before
+  its first motor start the vendor polls status 416 times with MOTORENB set (0xB5). The replay
+  collapses these into one poll that waits only while the motor really runs; replayed literally
+  against a parked carriage they cost ~17 s of idling.
 - **Multi-exposure is two complete sequences** (Kodak Gold capture): pass 2 recalibrates at 1×
   and differs only in its main scan (the four changes above). The long pass carries extra dark
   signal: long = slope·short + offset, offsets 870–2,040 counts with each pass's dark frame removed.
