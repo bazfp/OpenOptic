@@ -111,6 +111,11 @@ details summary{cursor:pointer;color:var(--ink2);font-size:13px}
 .controls #bStop{margin-left:auto}
 .field{display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px;align-items:center;margin:7px 0}
 .field>label{line-height:1.25}
+[hidden]{display:none!important}
+button.info{all:unset;cursor:pointer;display:inline-grid;place-items:center;width:15px;height:15px;margin-left:5px;border:1px solid var(--dim);border-radius:50%;color:var(--dim);font:italic 600 10px/1 Georgia,serif;vertical-align:1px}
+button.info:hover,button.info[aria-expanded=true]{color:var(--amber);border-color:var(--amber)}
+button.info:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
+aside p.help{margin:2px 0 8px;padding:7px 9px;border-left:2px solid var(--amber);background:rgba(255,255,255,.03)}
 .field .next{word-break:normal;overflow-wrap:anywhere;line-height:1.5}
 .btnpair{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 0}
 .btnpair button{padding:7px 8px}
@@ -160,6 +165,14 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
     <div class="field"><label for="orient">Orientation</label>
       <select id="orient"><option value="1">as scanned</option><option value="8">rotate 90° left</option><option value="6">rotate 90° right</option><option value="3">rotate 180°</option></select></div>
     <label class="check"><input type="checkbox" id="mirror"> flip horizontally (mirror left–right)</label>
+    <div class="field"><label for="multiExposure">Multi-exposure</label>
+      <select id="multiExposure"><option value="off">off</option><option value="range">extended range (linear)</option><option value="fusion">exposure fusion (HDR look)</option></select></div>
+    <p class="small" id="meNote">Multi-exposure always scans the frame twice (two passes): normally, then with a longer exposure (line period ×k, motor slowed to match; calibration stays at 1×). <b>Extended range</b> registers the passes, fits long = slope·short + offset per channel and blends them by their noise: shadows (dense negative areas) get the long pass's lower noise, highlights the 1× pass, and the TIFF stays linear 16-bit at the 1× scale for negative converters. <b>Exposure fusion</b> merges the passes Mertens-style (contrast, saturation, well-exposedness, Laplacian pyramids) into an inverted, tone-mapped positive for an artistic look; that TIFF is gamma-encoded, not for converters. 3600 dpi only. <b>Long pass exposure</b> sets only how long the second pass exposes; it never adds passes. Its line time is its exposure, so a k× pass takes k times a 40 s pass: 2× adds about 1 min 35 s, 3× about 2 min 15 s (shown beside each choice). Dummy lines are already dropped in every pass. In theory 2× cuts shadow noise to about 45–58 % of one pass and 3× to 32–50 % (less where the film's own grain dominates), so 2× is the quicker compromise.</p>
+    <div class="field"><label for="meFactor">Long pass</label>
+      <select id="meFactor"><option value="2">2× exposure</option><option value="3">3× exposure (as SilverFast)</option><option value="4">4× exposure</option></select></div>
+    <div class="field"><label for="infrared">Infrared</label>
+      <select id="infrared"><option value="off">off</option><option value="repair">dust &amp; scratch repair</option><option value="detect">detect only</option></select></div>
+    <p class="small">Adds an infrared pass (3600 dpi). The registered infrared is always saved as a 4th channel of the TIFF (RGBI, 16-bit, like SilverFast's 64-bit HDRi), and a defect mask PNG alongside. Dye images are transparent to IR, so dust and scratches show as dark marks. The pass is registered on the defects, the faint cyan-dye ghost is removed, and the mask is built from the IR transmission. <b>Repair</b> fills compact defects by exemplar inpainting from nearby film texture (keeps grain) and corrects large faint ones by their IR transmission; a mask PNG is saved. <b>Detect only</b> leaves the colour untouched, for repair in another program. Not for B&amp;W silver film or Kodachrome (they block IR; detected and skipped).</p>
     <div class="btnpair"><button id="bNextFree">Next free number</button><button id="bNewRoll">New roll…</button></div>
   </section>
 
@@ -169,9 +182,6 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
       <div class="field"><label for="tiffKind">TIFF</label>
         <select id="tiffKind"><option value="aligned">aligned RGB 16-bit</option><option value="both">aligned + raw USB</option><option value="raw">raw USB only</option></select></div>
       <label class="check"><input type="checkbox" id="saveJpeg"> also save a preview JPEG</label>
-      <div class="field"><label for="infrared">Infrared</label>
-        <select id="infrared"><option value="off">off (default)</option><option value="repair">dust &amp; scratch repair</option><option value="detect">detect only (IR channel + mask)</option></select></div>
-      <p class="small">Adds an infrared pass (3600 dpi). The registered infrared is always saved as a 4th channel of the TIFF (RGBI, 16-bit, like SilverFast's 64-bit HDRi), and a defect mask PNG alongside. Dye images are transparent to IR, so dust and scratches show as dark marks. The pass is registered on the defects, the faint cyan-dye ghost is removed, and the mask is built from the IR transmission. <b>Repair</b> fills compact defects by exemplar inpainting from nearby film texture (keeps grain) and corrects large faint ones by their IR transmission; a mask PNG is saved. <b>Detect only</b> leaves the colour untouched, for repair in another program. Not for B&amp;W silver film or Kodachrome (they block IR; detected and skipped).</p>
       <div class="field"><label for="lampCheck">Illumination check</label>
         <select id="lampCheck"><option value="warn">warn (recommended)</option><option value="wait">wait and retry</option><option value="off">off</option></select></div>
       <label class="check"><input type="checkbox" id="blackLevel"> correct black level (recommended)</label>
@@ -184,16 +194,11 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
       <div class="field"><label for="pixelSampling">Sensor pixels</label>
         <select id="pixelSampling"><option value="deletion">deletion (default)</option><option value="average">averaging (experimental)</option></select></div>
       <p class="small">Sensor averaging applies to calibration reads, framing and frame scans. It reduces horizontal sampling at 1440/3600 dpi; there is no reduction at 7200 dpi. Recorded shading remains in use, so live level checks compare against a deletion-mode reference. This is separate from output line-pair averaging.</p>
-      <div class="field"><label for="multiExposure">Multi-exposure</label>
-        <select id="multiExposure"><option value="off">off (one pass, default)</option><option value="range">extended range (linear, for converters)</option><option value="fusion">exposure fusion (tone-mapped positive)</option></select></div>
-      <div class="field"><label for="meFactor">Long pass</label>
-        <select id="meFactor"><option value="2">2× exposure</option><option value="3">3× exposure (as SilverFast)</option><option value="4">4× exposure</option></select></div>
-      <p class="small" id="meNote">Multi-exposure scans the frame twice: normally, then with a longer exposure (line period ×k, motor slowed to match; calibration stays at 1×). <b>Extended range</b> registers the passes, fits long = slope·short + offset per channel and blends them by their noise: shadows (dense negative areas) get the long pass's lower noise, highlights the 1× pass, and the TIFF stays linear 16-bit at the 1× scale for negative converters. <b>Exposure fusion</b> merges the passes Mertens-style (contrast, saturation, well-exposedness, Laplacian pyramids) into an inverted, tone-mapped positive for an artistic look; that TIFF is gamma-encoded, not for converters. 3600 dpi only. The long pass's line time is its exposure, so a k× pass takes k times a 40 s pass: 2× adds about 1 min 35 s, 3× about 2 min 15 s (shown beside each choice). Dummy lines are already dropped in every pass. In theory 2× cuts shadow noise to about 45–58 % of one pass and 3× to 32–50 % (less where the film's own grain dominates), so 2× is the quicker compromise.</p>
       <div class="field"><label for="warm">LED warm-up</label><div class="inline"><input type="number" id="warm" min="0" max="120" step="1" style="width:70px"><span class="small">seconds (default 1)</span></div></div>
       <p class="small">Warm-up applies only when the LED has been off.</p>
       <label class="check"><input type="checkbox" id="keepLamp"> keep the LED on between frames (off after 15 min idle)</label>
       <div class="field"><label for="pixels">Line doubling</label>
-        <select id="pixels"><option value="square">average line pairs (default)</option><option value="lanczos">Lanczos-3 (sharper, less grain aliasing)</option><option value="full">keep all lines (2× height)</option></select></div>
+        <select id="pixels"><option value="lanczos">Lanczos-3 (default: sharper, less grain aliasing)</option><option value="square">average line pairs</option><option value="full">keep all lines (2× height)</option></select></div>
       <p class="small">The scanner samples twice as many lines as columns. Averaging line pairs and Lanczos-3 both give square pixels. Lanczos-3 aligns the colours and reduces the lines in one step: vertical detail is kept better, with less grain aliasing and slightly less noise, at about 1–3 seconds' extra processing. Very hard edges may show a faint halo. “Keep all lines” saves every line with separate X/Y dpi tags; most programs display it stretched.</p>
       <div class="field"><label for="dummyLines">Dummy lines</label>
         <select id="dummyLines"><option value="none">none (fastest, default)</option><option value="fewer">one fewer</option><option value="recorded">as recorded (Plustek timing)</option></select></div>
@@ -623,10 +628,19 @@ const store={
 const KEY='opticfilm.roll.v1';
 const sep=(window.NATIVE_USB?.defaultDir||'').includes('\\')?'\\':'/';
 const defaults={dir:window.NATIVE_USB?.defaultDir?window.NATIVE_USB.defaultDir+sep+'Roll001':'',prefix:'Roll001_',next:1,digits:2,film:'neg',orientation:1,
-  tiff:'aligned',pixels:'square',profile:'full',jpeg:false,mirror:true,warm:1,keepLamp:true,lampCheck:'warn',blackLevel:true,pixelSampling:'deletion',multiExposure:'off',meFactor:'3',infrared:'off',dummyLines:'none',btn3:'scan',btn2:'preview'};
+  tiff:'aligned',pixels:'lanczos',profile:'full',jpeg:false,mirror:true,warm:1,keepLamp:true,lampCheck:'warn',blackLevel:true,pixelSampling:'deletion',multiExposure:'off',meFactor:'3',infrared:'off',dummyLines:'none',btn3:'scan',btn2:'preview'};
 let settings={...defaults}, records=[], pending=null, selected=null, rescan=null;
-try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s){ settings={...defaults,...s.settings}; records=s.records||[]; if(!s.v&&settings.warm===20) settings.warm=1; if((s.v||0)<3&&settings.dummyLines==='recorded') settings.dummyLines='none'; delete settings.exposureMultiplier; } }catch(e){}   // 20 s was the old default
-function persist(){ if(dry) return; try{ localStorage.setItem(KEY,JSON.stringify({v:3,settings,records:records.map(({large,...r})=>r)})); }catch(e){ log('w','could not remember the roll list in this browser: '+e.message); } }
+try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s){ settings={...defaults,...s.settings}; records=s.records||[]; if(!s.v&&settings.warm===20) settings.warm=1; if((s.v||0)<3&&settings.dummyLines==='recorded') settings.dummyLines='none'; delete settings.exposureMultiplier; if((s.v||0)<4&&settings.pixels==='square') settings.pixels='lanczos'; } }catch(e){}   // 20 s was the old default
+function persist(){ if(dry) return; try{ localStorage.setItem(KEY,JSON.stringify({v:4,settings,records:records.map(({large,...r})=>r)})); }catch(e){ log('w','could not remember the roll list in this browser: '+e.message); } }
+// sidebar notes: hidden behind an (i) beside the control they describe
+for(const p of document.querySelectorAll('aside p.small')){
+  const prev=p.previousElementSibling; if(!prev) continue;
+  const host=prev.matches('.field')?(prev.querySelector(':scope>label')||prev.firstElementChild):prev;
+  const b=document.createElement('button'); b.type='button'; b.className='info'; b.textContent='i'; b.title='Explain'; b.setAttribute('aria-label','Explain this option'); b.setAttribute('aria-expanded','false');
+  p.hidden=true; p.classList.add('help');
+  b.addEventListener('click',e=>{ e.preventDefault(); e.stopPropagation(); p.hidden=!p.hidden; b.setAttribute('aria-expanded',String(!p.hidden)); });
+  host.appendChild(b);
+}
 const bind=[['outDir','dir','text'],['prefix','prefix','text'],['nextNo','next','int'],['digits','digits','int'],['film','film','text'],['orient','orientation','int'],
   ['tiffKind','tiff','text'],['pixels','pixels','text'],['profileSel','profile','text'],['saveJpeg','jpeg','check'],['mirror','mirror','check'],['warm','warm','int'],['keepLamp','keepLamp','check'],['lampCheck','lampCheck','text'],['blackLevel','blackLevel','check'],['pixelSampling','pixelSampling','text'],['multiExposure','multiExposure','text'],['meFactor','meFactor','text'],['infrared','infrared','text'],['dummyLines','dummyLines','text'],['btn3','btn3','text'],['btn2','btn2','text']];
 function toUI(){ for(const [id,k,t] of bind){ if(t==='check') $(id).checked=!!settings[k]; else $(id).value=settings[k]; } refreshName(); }
@@ -638,9 +652,10 @@ function refreshName(){
   for(const o of $('profileSel').options){ const ps=scanPasses(o.value), s=scanSecs(o.value);
     o.textContent=`${DPI_LABEL[o.value]} · ${DPI_MB[o.value]} · ~${fmtSecs(s)}${ps.length>1?` (${ps.length} passes)`:''}`;
     o.title=ps.map(([n,t])=>`${n} ~${fmtSecs(t)}`).join(' + '); }
+  $('meFactor').closest('.field').hidden=settings.multiExposure==='off';   // only the second pass's exposure
   $('profileSel').title=($('profileSel').selectedOptions[0]?.title||'')+'\n'+(DPI_INFO[settings.profile]||'');
   const base=passSecs('full',{dummyLines:settings.dummyLines});
-  for(const o of $('meFactor').options){ const k=Number(o.value); o.textContent=`${k}× exposure${k===3?' (as SilverFast)':''} · +${fmtSecs(passSecs('full',{dummyLines:settings.dummyLines,exposureMultiplier:k})+15)}`; }
+  for(const o of $('meFactor').options){ const k=Number(o.value); o.textContent=`${k}× exposure${k===3?' (SilverFast)':''} · +${fmtSecs(passSecs('full',{dummyLines:settings.dummyLines,exposureMultiplier:k})+15)}`; }
 }
 const DPI_LABEL={prescan:'1440 dpi',full:'3600 dpi',full7200:'7200 dpi'}, DPI_MB={prescan:'~16 MB',full:'~103 MB',full7200:'~411 MB'};
 const fmtSecs=s=>s>=100?`${Math.floor(s/60)} min${s%60>=15?' '+Math.round(s%60)+' s':''}`:`${Math.round(s)} s`;
@@ -682,8 +697,24 @@ function renderRoll(){
     f.append(img,cap); f.onclick=()=>select(r); R.appendChild(f);
   }
 }
+// Full-size previews of saved frames live in this browser's IndexedDB (2400 px JPEGs, ~1 MB each),
+// so selecting any frame, even after a reload, shows a sharp image rather than the roll thumbnail.
+const previewDB=(()=>{ let db=null;
+  const open=()=>db||(db=new Promise((ok,no)=>{ const q=indexedDB.open('opticfilm-previews',1); q.onupgradeneeded=()=>q.result.createObjectStore('p'); q.onsuccess=()=>ok(q.result); q.onerror=()=>no(q.error); }));
+  const tx=async(mode,f)=>{ const d=await open(); return new Promise((ok,no)=>{ const t=d.transaction('p',mode), r=f(t.objectStore('p')); t.oncomplete=()=>ok(r?.result); t.onerror=()=>no(t.error); }); };
+  return { key:r=>`${outFolder()}|${r.base}|${r.scanned}`,
+    async put(r,blob){ await tx('readwrite',s=>s.put(blob,this.key(r))); },
+    async get(r){ try{ return await tx('readonly',s=>s.get(this.key(r)))||null; }catch(e){ return null; } },
+    async del(r){ try{ await tx('readwrite',s=>s.delete(this.key(r))); }catch(e){} } }; })();
+let shownURL=null;
+async function showLarge(r){
+  if(r.large){ show(r.large); return; }
+  show(r.thumb);                                   // instant, then the sharp one
+  const blob=await previewDB.get(r); if(!blob||selected!==r) return;
+  if(shownURL) URL.revokeObjectURL(shownURL); shownURL=URL.createObjectURL(blob); show(shownURL);
+}
 function select(r){
-  selected=r; show(r.large||r.thumb);
+  selected=r; showLarge(r);
   const d=$('details'); d.hidden=false;
   d.textContent=`${r.base}  ·  ${new Date(r.scanned).toLocaleString()}  ·  ${r.profile}  ·  film ${r.film}  ·  ${Roll.ORIENTATIONS[r.orientation]}\n`+
     r.files.map(f=>`  ${f.name}  ${(f.bytes/1048576).toFixed(1)} MB${f.width?`  ${f.width}×${f.height}`:''}${f.sha256?'  sha256 '+f.sha256.slice(0,16)+'…':''}`).join('\n')+
@@ -714,6 +745,7 @@ async function removeRecords(numbers){
   if(operationActive){ say('Wait for the current scan to finish before removing frames.','err'); return; }
   const drop=new Set(numbers), names=records.filter(r=>drop.has(r.number)).map(r=>r.base);
   if(!names.length) return;
+  for(const r of records) if(drop.has(r.number)) previewDB.del(r);
   records=records.filter(r=>!drop.has(r.number)); for(const n of drop) missing.delete(n);
   if(selected&&drop.has(selected.number)){ selected=null; $('details').hidden=true; $('view').hidden=true; $('hint').hidden=false; }
   if(rescan!==null&&drop.has(rescan)) rescan=null;
@@ -761,7 +793,7 @@ async function makePreview(planes,g,s){
   const x=o.getContext('2d'); x.translate(o.width/2,o.height/2); x.rotate(rot*Math.PI/180); x.drawImage(c,-c.width/2,-c.height/2);
   const t=document.createElement('canvas'), k=240/Math.max(o.width,o.height); t.width=Math.round(o.width*k); t.height=Math.round(o.height*k);
   const tx=t.getContext('2d'); tx.imageSmoothingQuality='high'; tx.drawImage(o,0,0,t.width,t.height);
-  return {large:o.toDataURL('image/jpeg',0.88),thumb:t.toDataURL('image/jpeg',0.75)};
+  return {large:o.toDataURL('image/jpeg',0.9),thumb:t.toDataURL('image/jpeg',0.75)};
 }
 const previewJpeg=async p=>p?.large?(await fetch(p.large)).blob():null;
 
@@ -820,6 +852,9 @@ async function retrySave(){
 }
 function discardPending(){ if(!pending||!confirm(`Discard the unsaved scan of ${pending.base}?`)) return; log('w',`discarded unsaved ${pending.base}`); pending=null; $('pendingRow').hidden=true; say('Unsaved frame discarded. Scan it again when ready.'); enableScan(); }
 async function frameSaved(r,wasRescan){
+  if(r.large&&!dry){ try{ await previewDB.put(r,await (await fetch(r.large)).blob());
+    for(const x of records) x.large=null;        // stored: keep only the newest in memory, the rest load from IndexedDB
+  }catch(e){} }
   records=records.filter(x=>x.number!==r.number); records.push(r);
   if(!wasRescan) settings.next=Math.max(settings.next,r.number+1);
   rescan=null; toUI(); persist(); select(r);
