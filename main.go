@@ -45,6 +45,9 @@ var captureSim []byte
 //go:embed motion.js
 var motionJS []byte
 
+//go:embed enhance.js
+var enhanceJS []byte
+
 //go:embed experimental.html
 var experimentalHTML []byte
 
@@ -316,7 +319,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodGet {
 		scripts := map[string][]byte{"/capture_profiles.js": captureProfiles, "/capture_runtime.js": captureRuntime,
-			"/roll.js": rollJS, "/capture_sim.js": captureSim, "/motion.js": motionJS}
+			"/roll.js": rollJS, "/capture_sim.js": captureSim, "/motion.js": motionJS, "/enhance.js": enhanceJS}
 		if b, ok := scripts[r.URL.Path]; ok {
 			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 			w.Write(b)

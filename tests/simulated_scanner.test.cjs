@@ -12,7 +12,7 @@ require(process.env.CAPTURE_PROFILES_FILE||path.join(__dirname,'../capture_profi
 require(process.env.CAPTURE_RUNTIME||path.join(__dirname,'../capture_runtime.js'));
 // ms from the start write to the stop write in each official capture; the test requires the
 // runtime to reproduce it, so a profile without an entry here would go unchecked.
-const OFFICIAL_STOP={prescan:2571.9,full:2559.7,full7200:2571.8};
+const OFFICIAL_STOP={prescan:2571.9,full:2559.7,full7200:2571.8,'full-ir':2571.7};   // full-ir: iSRD capture, sequence 1 (stop 0.8 ms after the GPIO4 event)
 // Values the real scanner returned for 0x4C-0x4F when polled without re-addressing (trace 1790025029175).
 const OBSERVED={0x4c:0x00,0x4d:0x80,0x4e:0x80,0x4f:0x20};
 

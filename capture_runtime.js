@@ -21,13 +21,13 @@
     const dummyLines=options.dummyLines??'recorded';
     const invalid=message=>{const e=new Error(message);e.name='ScanConfigurationError';throw e;};
     if(!['deletion','average'].includes(pixelSampling)) invalid('Unknown sensor pixel sampling mode.');
-    if(![1,1.5,2,3,4].includes(exposureMultiplier)) invalid('Choose an exposure of 1×, 1.5×, 2×, 3× or 4×.');
-    if(exposureMultiplier!==1) invalid('Longer exposure is saved but not implemented yet. Fresh AFE/shading calibration and coordinated motor timing are required. Select recorded exposure (1×) to scan.');
+    if(![1,2,3,4].includes(exposureMultiplier)) invalid('Choose an exposure of 1×, 2×, 3× or 4×.');
     if(!['recorded','fewer','none'].includes(dummyLines)) invalid('Unknown dummy line setting.');
     if(!profile) invalid('Unknown scan profile.');
     const recordedLines=profile.scan?profile.scan.lineSel:0;
-    const lineSel=dummyLines==='none'?0:dummyLines==='fewer'?Math.max(0,recordedLines-1):recordedLines;
-    if(pixelSampling==='deletion'&&lineSel===recordedLines) return profile; // Default wire sequence is unchanged.
+    // A longer exposure is a longer line period without dummy lines (as SilverFast's 3× pass).
+    const lineSel=exposureMultiplier>1?0:dummyLines==='none'?0:dummyLines==='fewer'?Math.max(0,recordedLines-1):recordedLines;
+    if(pixelSampling==='deletion'&&lineSel===recordedLines&&exposureMultiplier===1) return profile; // Default wire sequence is unchanged.
     let out={...profile,frames:profile.frames.map(f=>({...f,regs:{...f.regs}}))};
     if(pixelSampling==='average'){
       out.ops=out.ops.map(op=>{
@@ -38,9 +38,9 @@
       });
       out.frames.forEach(f=>{f.regs[3]|=0x40;});
     }
-    if(lineSel!==recordedLines) out=withLineSel(out,recordedLines,lineSel);
+    if(lineSel!==recordedLines||exposureMultiplier>1) out=withLineSel(out,recordedLines,lineSel,exposureMultiplier);
     out.acquisitionOptions={pixelSampling,exposureMultiplier,averagingReducesPixels:pixelSampling==='average'&&profile.dpi<7200,
-      dummyLines:{setting:dummyLines,recorded:recordedLines,used:lineSel},
+      dummyLines:{setting:dummyLines,recorded:recordedLines,used:lineSel},exposure:exposureMultiplier>1?{multiplier:exposureMultiplier,lPeriod:out.scan.lPeriod,bufsel:0x08,note:'line period ×k, no dummy lines, motor cruise scaled; calibration at 1× (as SilverFast)'}:null,
       calibration:pixelSampling==='average'?'recorded deletion-mode AFE and shading; live checks are comparisons, not fresh calibration':'recorded vendor AFE and shading'};
     return out;
   }
@@ -53,8 +53,11 @@
   // references were recorded with 1, 2 and 5 dummy lines at the same level, so dummy lines do
   // not lengthen the exposure. The recorded main scan inherits 0x1E from the positioning block, so
   // the new value is written in the start write itself, just before 0x0F=1.
-  function withLineSel(profile,recorded,lineSel){
-    const ops=profile.ops, main=profile.mainFrame, factor=(lineSel+1)/(recorded+1);
+  // Exposure ×k (k > 1): the main scan's line period becomes LPERIOD·k with no dummy lines and BUFSEL
+  // (0x20, buffer restart level) 0x08, all written in the start write; cruise C becomes C·k/(L+1).
+  // This reproduces SilverFast's 3× pass (LPERIOD 42000, LINESEL 0, cruise 21000, BUFSEL 0x08).
+  function withLineSel(profile,recorded,lineSel,k=1){
+    const ops=profile.ops, main=profile.mainFrame, factor=k*(lineSel+1)/(recorded+1);   // line time and cruise scale
     const firstMainRead=ops.findIndex(o=>o.kind==='read'&&o.frame===main);
     let startOp=-1;
     for(let i=firstMainRead-1;i>=0;i--){ const o=ops[i]; if(o.kind==='control'&&o.rt===0x40&&o.value===0x83&&o.data.length>1&&o.data.some((v,j)=>j%2===0&&v===0x0f&&o.data[j+1]===1)){startOp=i;break;} }
@@ -77,15 +80,18 @@
     const newOps=ops.slice();
     for(const i of tables){ const t=decode(ops[i].data); assert(t.at(-1)===cruise,'main-scan tables disagree');
       newOps[i]={...ops[i],data:encode(t.map(v=>v===cruise?next:v))}; }
-    const lineVal=(lineReg&0xf0)|lineSel;
-    newOps[startOp]={...ops[startOp],data:insertBeforeStart(ops[startOp].data,lineVal)};
-    const frames=profile.frames.map((f,i)=>i===main?{...f,regs:{...f.regs,[0x1e]:lineVal}}:f);
-    const scan={...profile.scan,lineSel,lineSeconds:+(profile.scan.lineSeconds*factor).toFixed(6),
+    const lineVal=(lineReg&0xf0)|lineSel, lp=profile.scan.lPeriod*k, extra=[0x1e,lineVal];
+    assert(Number.isInteger(lp)&&lp<=0xffff,'line period out of range');
+    if(k>1) extra.push(0x38,lp>>8,0x39,lp&0xff,0x20,0x08);
+    newOps[startOp]={...ops[startOp],data:insertBeforeStart(ops[startOp].data,extra)};
+    const regs=k>1?{[0x1e]:lineVal,[0x38]:lp>>8,[0x39]:lp&0xff,[0x20]:0x08}:{[0x1e]:lineVal};
+    const frames=profile.frames.map((f,i)=>i===main?{...f,regs:{...f.regs,...regs}}:f);
+    const scan={...profile.scan,lineSel,lPeriod:lp,lineSeconds:+(profile.scan.lineSeconds*factor).toFixed(6),
       seconds:+(profile.scan.seconds*factor).toFixed(1),bytesPerSecond:Math.round(profile.scan.bytesPerSecond/factor)};
     return {...profile,ops:newOps,frames,scan,motorCruise:{recorded:cruise,used:next}};
   }
-  function insertBeforeStart(data,lineVal){
-    const out=[]; for(let j=0;j<data.length;j+=2){ if(data[j]===0x0f) out.push(0x1e,lineVal); out.push(data[j],data[j+1]); } return out;
+  function insertBeforeStart(data,extra){
+    const out=[]; for(let j=0;j<data.length;j+=2){ if(data[j]===0x0f) out.push(...extra); out.push(data[j],data[j+1]); } return out;
   }
 
   async function run(profile, io, hooks={}) {
@@ -253,7 +259,7 @@
               e.name='ThroughputTooLow'; e.achieved=sinceStart/secs; e.needed=need; throw e;
             }
           } else started=now();
-          if(hooks.progress)hooks.progress(op.frame,state.got,f.bytes);
+          if(hooks.progress)hooks.progress(op.frame,state.got,f.bytes,state.data);   // data: the frame so far (main and lamp frames)
         }
         if(main&&state.got===f.bytes&&started&&hooks.log)hooks.log(`image transferred at ${(sinceStart/((now()-started)/1000)/1e6).toFixed(2)} MB/s (needs ${(need/1e6).toFixed(2)})`);
         // white calibration reads: let the caller judge the lamp before the main scan starts
@@ -287,8 +293,15 @@
   // Normalised cross-correlation of vertical gradients, R against G and B, then a parabolic
   // peak fit for sub-line precision. Falls back to the profile value when the image has
   // too little vertical structure to trust.
+  // Channel delays measured on B&W film, where all three channels see the same picture (sub-line
+  // cross-correlation, PROTOCOL.md section 6). They follow from the spacing of the sensor rows, so
+  // they hold for any film. Colour negative gives too little correlation between channels to
+  // measure per scan; the rounded profile values (24/48) would then be up to 0.22 line off.
+  // 14400 lines/inch (7200 dpi) is scaled from 7200: not measured fractionally yet.
+  const CALIBRATED_SHIFTS={2880:[0,9.84,19.30],7200:[0,24.22,48.21],14400:[0,48.44,96.42]};
   function measureShifts(bytes,p,opts={}){
     const f=p.frames[p.mainFrame], P=f.pixels, L=f.lines, nominal=p.shifts;
+    const cal=CALIBRATED_SHIFTS[p.yres], calibrated=cal&&cal.every((v,c)=>Math.abs(v-nominal[c])<=1)?cal:null;   // only for the real sensor geometry
     assert(bytes.byteLength===f.bytes,'Wrong image byte count');
     const dv=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
     const maxNom=Math.max(...nominal), reach=Math.max(4,Math.ceil(maxNom*0.35));
@@ -316,9 +329,36 @@
       const ok=cs[bi]>=(opts.minConfidence??0.3)&&bi>0&&bi<cs.length-1;
       const v=Math.round(est*100)/100;
       out.measured.push(v);out.confidence.push(Math.round(cs[bi]*1000)/1000);
-      out.shifts.push(ok?v:nom);out.used.push(ok?'measured':'nominal (low confidence)');
+      out.shifts.push(ok?v:calibrated?calibrated[c]:nom);
+      out.used.push(ok?'measured':calibrated?'calibrated (low confidence on this frame)':'nominal (low confidence)');
     }
     return out;
+  }
+  // Live preview while the main frame streams in: a downscaled, colour-aligned, square-pixel copy
+  // filled row by row from the bytes received so far. update(data, got) adds the rows that are now
+  // complete and returns how many there are; planes/width/height feed renderPreview.
+  function livePreview(profile,{maxWidth=900,mirror=false,shifts}={}){
+    const f=profile.frames[profile.mainFrame], P=f.pixels, L=f.lines, row=P*6;
+    const sh=(shifts||CALIBRATED_SHIFTS[profile.yres]||profile.shifts).map(v=>Math.round(v));
+    const fx=Math.max(1,Math.ceil(P/maxWidth)), W=Math.floor(P/fx), sy=fx*profile.yres/profile.dpi;   // raw lines per output row
+    const maxSh=Math.max(...sh), H=Math.max(1,Math.floor((L-maxSh-1)/sy));
+    const planes=[0,1,2].map(()=>new Uint16Array(W*H)); let rows=0;
+    const xs=[0,1].map(k=>Math.min(fx-1,Math.floor((k+0.5)*fx/2)));               // 2 x 2 samples per output pixel
+    return {width:W,height:H,planes,get rows(){return rows;},
+      update(data,got){
+        if(!data) return rows;
+        const dv=new DataView(data.buffer,data.byteOffset,data.byteLength), have=Math.floor(got/row);
+        while(rows<H){
+          const y0=Math.floor(rows*sy);
+          if(y0+Math.ceil(sy/2)+maxSh+1>=have) break;
+          for(let c=0;c<3;c++){ const pl=planes[c], ya=y0+sh[c], yb=ya+Math.floor(sy/2);
+            for(let x=0;x<W;x++){ const bx=x*fx; let acc=0;
+              for(const yy of [ya,yb]) for(const dx of xs) acc+=dv.getUint16(yy*row+(bx+dx)*6+c*2,true);
+              pl[rows*W+(mirror?W-1-x:x)]=acc>>2; } }
+          rows++;
+        }
+        return rows;
+      }};
   }
   function decode(bytes,g){
     assert(bytes.byteLength===g.totalBytes,'Wrong image byte count');
@@ -366,6 +406,7 @@
   // linear inversion does. Slides/positives: linear levels with sRGB-like gamma.
   function renderPreview(planes,g,film='neg'){
     const N=g.pixels*g.lines, out=new Uint8ClampedArray(N*4), mx=Math.floor(g.pixels*0.02), my=Math.floor(g.lines*0.02);
+    if(film==='display'){ for(let c=0;c<3;c++) for(let i=0;i<N;i++) out[i*4+c]=planes[c][i]>>8; for(let i=0;i<N;i++) out[i*4+3]=255; return out; }   // already a rendered positive
     const neg=film!=='pos', lut=new Uint8ClampedArray(4096);
     for(let i=0;i<4096;i++)lut[i]=Math.round(255*Math.pow(i/4095,neg?1/1.4:1/2.2));
     for(let c=0;c<3;c++){
@@ -384,6 +425,22 @@
 
   // ------------------------------------------------------------ lamp check
   // Statistics of a white calibration read (central 80 % of the line, like the profile builder).
+  // Temporal noise of a calibration frame (dark or white, 128 lines of the same strip): per
+  // column, the variance across lines; averaged over the central 80 % of columns. Feeds the
+  // multi-exposure noise model: read noise from the dark frame, gain = (var - read)/mean from white.
+  function noiseStats(data,frame){
+    const P=frame.pixels, L=frame.lines, x0=Math.floor(P/10), x1=P-Math.floor(P/10), dv=new DataView(data.buffer,data.byteOffset,data.byteLength);
+    const mean=[0,0,0], tvar=[0,0,0];
+    for(let x=x0;x<x1;x+=3) for(let c=0;c<3;c++){ let s=0,ss=0;
+      for(let y=0;y<L;y++){ const v=dv.getUint16(((y*P+x)*3+c)*2,true); s+=v; ss+=v*v; }
+      const m=s/L; mean[c]+=m; tvar[c]+=ss/L-m*m; }
+    const n=Math.ceil((x1-x0)/3);
+    return {mean:mean.map(v=>+(v/n).toFixed(1)),tvar:tvar.map(v=>+(v/n).toFixed(1))};
+  }
+  function noiseModel(dark,white){
+    return [0,1,2].map(c=>{ const read=Math.max(1,dark.tvar[c]), sig=Math.max(1,white.mean[c]-dark.mean[c]);
+      return {read:+read.toFixed(1),gain:+Math.max(0.01,(white.tvar[c]-read)/sig).toFixed(4)}; });
+  }
   function whiteStats(data,frame){
     const P=frame.pixels, L=frame.lines, x0=Math.floor(P/10), x1=P-Math.floor(P/10), dv=new DataView(data.buffer,data.byteOffset,data.byteLength);
     const sum=[0,0,0], lineMeans=[[],[],[]];
@@ -523,19 +580,20 @@
   }
   // Baseline TIFF header for an uncompressed interleaved RGB16 strip that follows it.
   // Orientation: 1 as scanned, 3 rotate 180, 6 rotate 90 CW, 8 rotate 90 CCW (viewer applies it).
-  function tiffHeader(w,h,xdpi,ydpi,{orientation=1,description='',software='OpticFilm 7600i roll scanner'}={}){
-    const dataBytes=w*h*6;
+  function tiffHeader(w,h,xdpi,ydpi,{orientation=1,description='',software='OpticFilm 7600i roll scanner',channels=3}={}){
+    assert(channels===3||channels===1,'TIFF channels must be 1 or 3');
+    const dataBytes=w*h*2*channels;
     assert(Number.isSafeInteger(dataBytes)&&w>0&&h>0&&dataBytes<0xffffffff-65536,'Invalid or oversized TIFF dimensions');
     assert([1,3,6,8].includes(orientation),'Unsupported orientation');
     const ascii=s=>{const b=[...s].map(ch=>{const c=ch.charCodeAt(0);return c>=32&&c<127?c:63;});b.push(0);return b;};
     const desc=description?ascii(description):null, soft=ascii(software);
-    const E=[[256,4,1,w],[257,4,1,h],[258,3,3,'bps'],[259,3,1,1],[262,3,1,2]];
+    const grey=channels===1, E=[[256,4,1,w],[257,4,1,h],grey?[258,3,1,16]:[258,3,3,'bps'],[259,3,1,1],[262,3,1,grey?1:2]];
     if(desc)E.push([270,2,desc.length,'desc']);
-    E.push([273,4,1,'data'],[274,3,1,orientation],[277,3,1,3],[278,4,1,h],[279,4,1,dataBytes],
+    E.push([273,4,1,'data'],[274,3,1,orientation],[277,3,1,channels],[278,4,1,h],[279,4,1,dataBytes],
       [282,5,1,'xres'],[283,5,1,'yres'],[284,3,1,1],[296,3,1,2],[305,2,soft.length,'soft']);
     const ifd=8, ifdSize=2+E.length*12+4; let off=ifd+ifdSize; const place={};
     const reserve=(key,len)=>{place[key]=off;off+=len+(len&1);};
-    reserve('bps',6);reserve('xres',8);reserve('yres',8);if(desc)reserve('desc',desc.length);reserve('soft',soft.length);
+    if(!grey)reserve('bps',6);reserve('xres',8);reserve('yres',8);if(desc)reserve('desc',desc.length);reserve('soft',soft.length);
     off=(off+15)&~15; const dataOff=off;
     const buf=new ArrayBuffer(dataOff), dv=new DataView(buf), u8=new Uint8Array(buf);
     dv.setUint16(0,0x4949,true);dv.setUint16(2,42,true);dv.setUint32(4,ifd,true);dv.setUint16(ifd,E.length,true);
@@ -548,12 +606,12 @@
       o+=12;
     }
     dv.setUint32(o,0,true);
-    for(let i=0;i<3;i++)dv.setUint16(place.bps+i*2,16,true);
+    if(!grey)for(let i=0;i<3;i++)dv.setUint16(place.bps+i*2,16,true);
     dv.setUint32(place.xres,Math.round(xdpi),true);dv.setUint32(place.xres+4,1,true);
     dv.setUint32(place.yres,Math.round(ydpi),true);dv.setUint32(place.yres+4,1,true);
     if(desc)u8.set(desc,place.desc); u8.set(soft,place.soft);
     return buf;
   }
 
-  globalThis.CaptureRuntime={prepareProfile,SCAN_LINE_SETTINGS:['recorded','fewer','none'],run,geometry,measureShifts,decode,levels,renderRGB,alignedFrame,previewPlanes,tiffHeader,renderPreview,whiteStats,lampVerdict,darkVerdict,LAMP_LIMITS};
+  globalThis.CaptureRuntime={noiseStats,noiseModel,CALIBRATED_SHIFTS,livePreview,prepareProfile,SCAN_LINE_SETTINGS:['recorded','fewer','none'],run,geometry,measureShifts,decode,levels,renderRGB,alignedFrame,previewPlanes,tiffHeader,renderPreview,whiteStats,lampVerdict,darkVerdict,LAMP_LIMITS};
 })();

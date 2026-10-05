@@ -36,7 +36,7 @@ require('../capture_profiles.js');require('../capture_runtime.js');
     for(const i of [0,1,65535,65536,raw.length-1])assert.equal(raw[i],i%251);
     const g=CaptureRuntime.geometry(p);
     assert.deepEqual([g.pixels,g.lincnt,g.lines,g.lincntReg],
-      {prescan:[2050,2824,2805,5648],full:[5124,7058,7010,14116],full7200:[10248,14122,14018,28244]}[name]);
+      {prescan:[2050,2824,2805,5648],full:[5124,7058,7010,14116],full7200:[10248,14122,14018,28244],'full-ir':[5124,7058,7010,14116]}[name]);
     console.log(name+`: complete control/table sequence in order${inserted?` (+${inserted} status poll(s))`:''}; move 1 stopped at +${(stopAt-moveAt).toFixed(1)} ms (recorded ${want}); short reads and frame boundaries passed`);
   }
   const tiny={frames:[{bytes:24}],mainFrame:0,ops:[
@@ -159,3 +159,10 @@ require('../capture_profiles.js');require('../capture_runtime.js');
   for(const f of ['roll.js','capture_sim.js','motion.js'])new vm.Script(fs.readFileSync(require('node:path').join(__dirname,'..',f),'utf8'));
   console.log('UI pages parse; every referenced element exists');
 })().catch(e=>{console.error(e);process.exit(1);});
+// Colour negative: too little inter-channel correlation to measure; fall back to the calibrated
+// fractional delays of the real sensor, not the rounded profile values.
+{const p=CAPTURE_PROFILES.full, f=p.frames[p.mainFrame], b=new Uint8Array(f.bytes), v=new Uint16Array(b.buffer);
+ require('node:crypto').randomFillSync(v); for(let i=0;i<v.length;i++) v[i]=20000+(v[i]>>4);   // uncorrelated channels
+ const m=CaptureRuntime.measureShifts(b,p);
+ assert.deepEqual(m.shifts,[0,24.22,48.21]); assert.match(m.used[1],/calibrated/);
+ console.log('Colour-film fallback: uncorrelated channels use the calibrated delays 24.22/48.21');}
