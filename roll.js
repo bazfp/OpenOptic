@@ -15,6 +15,7 @@
     assert(Number.isInteger(number)&&number>=0&&number<=999999,'Frame number must be 0–999999');
     return cleanPrefix(prefix)+String(number).padStart(digits||2,'0');
   }
+  const PREVIEW_MAX=2400;   // on-screen preview of a saved frame (long side, px)
   function fileNames(settings,number){
     const b=baseName(settings.prefix,number,settings.digits), n=[];
     if(settings.tiff!=='raw')n.push({kind:'tiff',name:b+'.tif'});
@@ -43,8 +44,8 @@
     if(acq.long||acq.ir){
       await processPasses(pending,acq,ctx.log||(()=>{}));
       const P=pending.aligned, rgb=new Uint16Array(P.data.buffer,P.data.byteOffset,P.data.byteLength>>1);
-      pv=Enhance.previewFromAligned(rgb,P.width,P.height,1200);
-    }else pv=CaptureRuntime.previewPlanes(bytes,g,1200,offsets,settings.mirror!==false);
+      pv=Enhance.previewFromAligned(rgb,P.width,P.height,PREVIEW_MAX);
+    }else pv=CaptureRuntime.previewPlanes(bytes,g,PREVIEW_MAX,offsets,settings.mirror!==false);
     const display=pending.processing?.multiExposure?.mode==='fusion';
     pending.preview=await ctx.makePreview(pv.planes,pv.g,display?{...settings,film:'display'}:settings);   // {large, thumb}
     return saveFrame(ctx,pending);

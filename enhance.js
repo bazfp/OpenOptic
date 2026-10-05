@@ -372,8 +372,12 @@
   function previewFromAligned(rgb,W,H,maxDim=1200,minus=[0,0,0]){
     const scale=Math.min(1,maxDim/Math.max(W,H)), w=Math.max(1,Math.round(W*scale)), h=Math.max(1,Math.round(H*scale));
     const planes=[0,1,2].map(()=>new Uint16Array(w*h)), bx=W/w, by=H/h;
-    for(let y=0;y<h;y++) for(let x=0;x<w;x++){ const sy=Math.min(H-1,Math.floor((y+0.5)*by)), sx=Math.min(W-1,Math.floor((x+0.5)*bx)), j=(sy*W+sx)*3;
-      for(let c=0;c<3;c++){ const v=rgb[j+c]-minus[c]; planes[c][y*w+x]=v<0?0:v; } }
+    // box average over each output pixel's footprint (picking single pixels aliases grain)
+    for(let y=0;y<h;y++){ const y0=Math.floor(y*by), y1=Math.max(y0+1,Math.min(H,Math.floor((y+1)*by)));
+      for(let x=0;x<w;x++){ const x0=Math.floor(x*bx), x1=Math.max(x0+1,Math.min(W,Math.floor((x+1)*bx))); let r=0,g=0,b=0;
+        for(let yy=y0;yy<y1;yy++) for(let xx=x0,j=(yy*W+x0)*3;xx<x1;xx++,j+=3){ r+=rgb[j]; g+=rgb[j+1]; b+=rgb[j+2]; }
+        const n=(y1-y0)*(x1-x0), i=y*w+x, v=[r/n-minus[0],g/n-minus[1],b/n-minus[2]];
+        for(let c=0;c<3;c++) planes[c][i]=v[c]<0?0:Math.round(v[c]); } }
     return {planes,g:{pixels:w,lines:h}};
   }
 

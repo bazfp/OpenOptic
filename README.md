@@ -106,12 +106,12 @@ The bar under the preview holds the resolution choice (1440 / 3600 / 7200 dpi, e
 
 **Flip horizontally** (Roll section) is on by default. It mirrors the aligned TIFF, the preview JPEG, the on-screen framing prescan and the roll thumbnails. The flip is applied after channel alignment and 7200 dpi column-stagger correction (which follow native sensor column parity) and before the TIFF orientation tag. The raw USB TIFF is never flipped. The sidecar records it under `processing.horizontalMirror`.
 
-**Advanced** holds multi-exposure, sensor pixel averaging, dummy lines, front-button actions, LED warm-up, keep LED on, and **Line doubling**.
+**Multi-exposure** and **Infrared** sit in the top (Roll) section. Every sidebar explanation is behind an ⓘ next to its option. **Advanced** holds sensor pixel averaging, dummy lines, front-button actions, LED warm-up, keep LED on, and **Line doubling**.
 
 The scanner samples twice as many lines as columns (the official software steps the carriage half as far per line as the sensor's column spacing). Line doubling offers three ways to handle this:
 
-- **Average line pairs** (default): each output row is the mean of two raw lines, after linear-interpolated colour alignment.
-- **Lanczos-3**: each colour channel is resampled once, straight from the raw lines, with a Lanczos-3 kernel stretched 2× (12 taps). Colour alignment, 7200 dpi stagger and line reduction happen in one step on the same output grid as the pair average. Compared with the pair average it keeps similar detail up to about 0.8 of the output Nyquist, has about a third of the worst-case aliasing (harsh grain), slightly less noise, and gives all three channels the same sharpness. Negative kernel lobes can leave a faint halo on very hard edges; values are clamped to 0–65535. Extra processing: about 0.5 s at 3600 dpi, 3 s at 7200 dpi.
+- **Average line pairs**: each output row is the mean of two raw lines, after linear-interpolated colour alignment.
+- **Lanczos-3** (default): each colour channel is resampled once, straight from the raw lines, with a Lanczos-3 kernel stretched 2× (12 taps). Colour alignment, 7200 dpi stagger and line reduction happen in one step on the same output grid as the pair average. Compared with the pair average it keeps similar detail up to about 0.8 of the output Nyquist, has about a third of the worst-case aliasing (harsh grain), slightly less noise, and gives all three channels the same sharpness. Negative kernel lobes can leave a faint halo on very hard edges; values are clamped to 0–65535. Extra processing: about 0.5 s at 3600 dpi, 3 s at 7200 dpi.
 - **Keep all lines**: every line, with separate X/Y dpi tags; most software displays it stretched.
 
 The sidecar records the method under `processing.verticalAveraging` and `processing.interpolation`, and each TIFF entry records `lineFilter`.
@@ -141,6 +141,13 @@ While connected, the page listens on the scanner's interrupt endpoint (0x83), as
 **Button monitor.** **Diagnostics → Monitor buttons (60 s)** logs every scanner event and every change of GPIO registers 0x6C/0x6D while you press the front buttons, then writes a `BUTTON MONITOR RESULT` line. Once the codes are known, a button can be mapped to **Scan & Save**.
 
 Event support depends on the helper's USB backend: Linux (usbfs) and Windows with WinUSB read the interrupt endpoint; Windows with Plustek's usbscan driver and macOS report it as unavailable and keep the timed stop. Under plain WebUSB the browser reads it directly.
+
+## Frame previews
+
+Selecting a saved frame shows a 2400 px preview (box-filtered from the full frame). These previews
+are kept in the browser's IndexedDB for the helper's address, so they survive page reloads; the roll
+list itself keeps 240 px thumbnails. Frames scanned before this version only have the thumbnail.
+Removing a frame from the list also removes its stored preview.
 
 ## Removing frames from the roll list
 
@@ -218,9 +225,9 @@ The viewer draws the frame as the scanner delivers it, line by line, with the co
 applied, inverted for negatives, mirrored and rotated as the final preview will be. Levels refine
 as rows arrive. Each pass of a multi-pass frame is labelled ("pass 2 of 3: infrared · 40 %").
 
-## Multi-exposure (Advanced, 3600 dpi)
+## Multi-exposure (3600 dpi)
 
-The frame is scanned twice, as SilverFast does: the normal pass, then a long-exposure pass
+The frame is always scanned exactly twice, as SilverFast does; **Long pass** only sets the second pass's exposure: the normal pass, then a long-exposure pass
 (line period ×2, ×3 or ×4, no dummy lines, motor cruise scaled so the line spacing stays the same;
 calibration stays at 1×). The ×3 pass is byte-for-byte the register state of SilverFast's own
 multi-exposure pass. Two modes:
@@ -241,7 +248,7 @@ well, about 3 min 50 s. The resolution menu shows the total and the passes.
   saturation and well-exposedness weights, Laplacian-pyramid blend). The TIFF is a gamma-encoded,
   tone-mapped positive, not for converters.
 
-## Infrared dust and scratch repair (Output options, 3600 dpi)
+## Infrared dust and scratch repair (3600 dpi)
 
 Adds a third, complete infrared sequence (white LED off, IR LED on via GPIO27, as recorded from
 SilverFast's iSRD). Colour dyes are transparent to IR, so dust, hair and scratches are the only
