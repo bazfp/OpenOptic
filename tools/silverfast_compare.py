@@ -21,7 +21,16 @@ def offset(ref, mov):
 sf = tifffile.imread(sys.argv[1], key=0).astype(np.float32); n1 = square(sys.argv[2]); lo = square(sys.argv[3])
 best = max((offset(f(sf)[..., 1], n1[..., 1]) + (name, f) for name, f in [('as is', lambda a: a), ('mirrored', lambda a: a[:, ::-1])]), key=lambda t: t[0])
 print(f'SilverFast orientation: {best[3]} relative to the raw scan'); sf = best[4](sf)
-_, dy, dx = offset(n1[..., 1], lo[..., 1]); lo = np.roll(np.roll(lo, dy, 0), dx, 1); print(f'long pass offset: rows {dy}, columns {dx} (8 px steps)')
+_, dy, dx = offset(n1[..., 1], lo[..., 1])
+def fine(ref, mov, dy, dx):                       # 1 px search around the coarse offset
+    a = np.log(ref[600:2900:2, 600:4500:2] + 64); best = None
+    for y in range(dy - 8, dy + 9):
+        for x in range(dx - 8, dx + 9):
+            b = np.log(np.roll(np.roll(mov, y, 0), x, 1)[600:2900:2, 600:4500:2] + 64)
+            c = np.corrcoef(a.ravel(), b.ravel())[0, 1]
+            if best is None or c > best[0]: best = (c, y, x)
+    return best[1], best[2]
+dy, dx = fine(n1[..., 1], lo[..., 1], dy, dx); lo = np.roll(np.roll(lo, dy, 0), dx, 1); print(f'long pass offset: rows {dy}, columns {dx}')
 hp = lambda a: a - nd.uniform_filter(a, 5); s = (slice(300, -300), slice(300, -300))
 for c in range(3):
     keep = lo[s + (c,)] < 60000; k = np.median(lo[s + (c,)][keep] / np.maximum(n1[s + (c,)][keep], 1))
