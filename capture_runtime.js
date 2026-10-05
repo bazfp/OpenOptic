@@ -207,8 +207,14 @@
       // op.register is the address in force when the vendor issued this read.
       if(op.value===0x84&&op.register===STATUS){
         const expected=op.expected[0];
-        if(!(regs[1]&1)&&(expected&(FEEDFSH|MOTORENB))===FEEDFSH)
-          await pollStatus(op,r,FEEDFSH|MOTORENB,FEEDFSH,'waiting for positioning move to finish');
+        if(!(regs[1]&1)&&(expected&(FEEDFSH|MOTORENB))===FEEDFSH){
+          // FEEDFSH latches the end of a move. Before this sequence has started one, a recorded
+          // FEEDFSH belongs to the vendor's previous move (the iSRD infrared job begins with 0xFC
+          // after SilverFast's carriage return); a carriage parked by this app reads 0xDC and never
+          // sets it, so then only wait while the motor actually runs.
+          if(moveStartedAt===null){ if(r[0]&MOTORENB) await pollStatus(op,r,MOTORENB,0,'waiting for the previous move to finish'); }
+          else await pollStatus(op,r,FEEDFSH|MOTORENB,FEEDFSH,'waiting for positioning move to finish');
+        }
         else if((regs[1]&1)&&!(expected&BUFEMPTY))
           await pollStatus(op,r,BUFEMPTY,0,'waiting for scan data');
       }
