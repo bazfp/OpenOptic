@@ -140,6 +140,8 @@ While connected, the page listens on the scanner's interrupt endpoint (0x83), as
 
 **Button monitor.** **Diagnostics → Monitor buttons (60 s)** logs every scanner event and every change of GPIO registers 0x6C/0x6D while you press the front buttons, then writes a `BUTTON MONITOR RESULT` line. Once the codes are known, a button can be mapped to **Scan & Save**.
 
+If the event endpoint has errors, the page keeps retrying (it used to stop after three), and while the scanner is idle it also polls the GPIO inputs (register 0x6D, as the button monitor does) so presses still work. A press seen both ways acts once; polling pauses during every operation.
+
 Event support depends on the helper's USB backend: Linux (usbfs) and Windows with WinUSB read the interrupt endpoint; Windows with Plustek's usbscan driver and macOS report it as unavailable and keep the timed stop. Under plain WebUSB the browser reads it directly.
 
 ## Frame previews
