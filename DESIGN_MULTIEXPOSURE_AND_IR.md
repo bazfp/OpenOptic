@@ -12,7 +12,7 @@ show from what is proposed.
 | Vendor method (captured) | One main pass at 3× exposure, calibration at 1× | Full colour job, then a full second job with the IR LED |
 | Registers changed | LPERIOD 14,000→42,000, LINESEL 1→0, cruise 14,000→21,000, BUFSEL 0x10→0x08 | 0x03 0xBF→0xAF (white LED off), 0xA8 0x20→0x27 (GPIO27 = IR LED), IR calibration |
 | Key finding | Red clips on 63 % of a colour negative at 3×; needs a 1× image as well | Passes land 2.3–2.5 raw lines apart; IR has a 6.5 % cyan-dye ghost |
-| Proposed | Two passes (1× + 3×) merged, the long pass used in the shadows, as SilverFast does | Colour pass + IR pass, registered, ghost removed, defects repaired |
+| Proposed | Two passes (1× + 3×), aligned and blended with noise-optimal weights, as SilverFast does | Colour pass + IR pass, registered, ghost removed, defects repaired |
 | Time at 3600 dpi | ≈ 3.7 min (SilverFast ME + IR: three passes, ≈ 5 min) (≈ 3 min with Dummy lines "none" on the 1× pass) | ≈ 3.3 min (194 s captured) |
 
 ## 2. Shared groundwork
@@ -68,14 +68,19 @@ No 1× image pass is in the capture. Calibration stays at 1× and the hardware s
 separate passes, so that is the proven route.
 
 **SilverFast's merge, measured** on its saved linear TIFF of this frame (`HDRScan = Yes`,
-`Gamma = 1`) against the two captured passes. The TIFF is mirrored left to right relative to the
-raw scan and sits 0.5 column off (its own resampling); no rotation.
-- Output brightness = the 1× pass (ratio 1.00 red, 1.00–1.05 green/blue): merged onto the 1×
+`Gamma = 1`) against the two captured passes (`tools/silverfast_compare.py`). The TIFF is mirrored
+left to right relative to the raw scan and sits 0.5 column off (its own resampling); no rotation.
+The 3× pass is 2 rows and −1 column from the 1× pass, which SilverFast corrects
+(`sfAlignmentMultiExposure`).
+- Output brightness = the 1× pass (ratio 1.00 red, 1.02 green, 1.05 blue): merged onto the 1×
   scale.
-- Fine detail follows the 1× pass almost everywhere. The 3× pass contributes measurably only in
-  the darkest blue (share ≈ 0.2–0.3 below ~4 % of full scale at 1×, noisy), not wherever it is
-  unclipped. On this colour negative the densest areas still read 3–5 % of full scale at 1×, so
-  ME changes little; it matters for slides, dense B&W and over-exposed negatives.
+- It **blends** the passes; it does not switch. Share of the 3× pass in the fine detail, where
+  the 3× pass is not clipped: green 0.61–0.79, blue 0.80 in the darkest areas falling to 0.35
+  near 50 % of full scale, red 0.43–0.53. Where the 3× pass clips (most of red on this
+  negative) the output comes from the 1× pass.
+- These shares are close to noise-optimal (inverse-variance) weighting: scaled down by k, the
+  long pass has 1/k of the shot-noise variance, so its ideal weight is k/(k+1) = 0.75 for k = 3,
+  rising towards k²/(k²+1) = 0.9 where read noise dominates.
 - The output is slightly smoother than either pass (some filtering or different line
   resampling), and has two flat mid-grey blocks (32,640 in all channels) along the top-left and
   bottom-right edges, purpose unknown.
@@ -88,11 +93,13 @@ For each channel c, on linear data:
    green/blue detail (same image content, strong correlation).
 3. Estimate the real ratio k_c by regression where both passes are between 5 % and 80 % of full
    scale; do not trust the nominal 3 (measured 3.02 and 2.88).
-4. Blend weight by **how dark the 1× pass is**, as SilverFast does, not merely by whether the
-   long pass is unclipped: w = 1 where the local 1× level is below ~4 % of full scale, falling
-   smoothly to 0 at ~12 %, and forced to 0 wherever the long pass exceeds 75 % of full scale.
-   Keeping the 3× pass to the shadows limits the damage of any residual misregistration. Output
-   = w · long/k_c + (1 − w) · short. The thresholds are settings, tuned against SilverFast's TIFF.
+4. Blend with **inverse-variance weights**, as SilverFast's output suggests: per pixel, estimate
+   each pass's noise variance on the 1× scale from a noise model (shot + read noise, measured
+   from the dark and white references), and weight by 1/variance, giving the long pass ≈ 0.75
+   (k = 3) in mid-tones and up to ≈ 0.9 in deep shadows. Taper the long pass's weight to 0
+   between 90 % and 98 % of full scale so clipped or nearly clipped samples are never used.
+   Output = w · long/k_c + (1 − w) · short. Measured against SilverFast's TIFF of the captured
+   frame.
 5. Write 16-bit linear at the 1× scale, so existing TIFFs, previews and converters see the same
    levels; only the noise drops (≈ √3 shot noise, 3× read noise where the long pass is used).
 
@@ -185,5 +192,5 @@ pass processed in stripes as it arrives; that is phase 6.
    (`sfAlignmentMultiExposure`). Its saved linear TIFF of this frame is a reference for testing our merge.
 2. IR at 7200 dpi: worth a capture if you will use it.
 3. Do you scan B&W silver film? It decides how much effort goes into IR-failure detection.
-4. ME benefits slides and dense film far more than colour negatives (see 3.2): which film types
-   matter most to you decides whether ME or IR repair comes first.
+4. Which comes first, ME or IR repair? ME lowers noise on every film (on this negative mostly in
+   green and blue); IR repair removes dust and scratches.
