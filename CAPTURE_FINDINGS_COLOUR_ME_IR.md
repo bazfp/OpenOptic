@@ -57,9 +57,10 @@ Reproduce with `tools/capture_extract.py` (register/AFE state per read, tables, 
 - The exposure is linear: signal is 3.02× (green) and 2.88× (blue) the normal pass at the same
   points, so the recorded shading (computed at 1×) still applies multiplicatively.
 - On colour negative, **63 % of the red channel is clipped** at 65,535 (the orange mask passes red
-  strongly); green and blue do not clip (p99.5 48,504 and 29,901). The capture contains no
-  normal-exposure image pass, so the vendor must merge with an image taken elsewhere (perhaps its
-  preview), or the 1× pass was not recorded. **Open question.**
+  strongly); green and blue do not clip (p99.5 48,504 and 29,901). **The scan made one carriage
+  pass (confirmed by the user)**, so the vendor's "multi-exposure" is a single extended exposure.
+  The clipped red cannot be recovered from this scan; the vendor output either keeps the clipping
+  or fills it from the low-resolution preview. Checking the vendor's saved TIFF would tell which.
 - Interrupt events: `0x08` at 10.477 s (9 ms before move 1 starts, as the read is opened) and at
   13.065 s (move 1 stop point).
 

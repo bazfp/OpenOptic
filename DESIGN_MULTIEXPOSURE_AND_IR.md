@@ -54,16 +54,16 @@ the B&W-measured 24.22/48.21 instead. Small change, benefits every colour scan.
 ## 3. Multi-exposure
 
 ### 3.1 What the capture shows
-One main pass at 3× exposure, linear (×3.02 green, ×2.88 blue), red 63 % clipped on this negative.
+One main pass at 3× exposure (one carriage pass, confirmed), linear (×3.02 green, ×2.88 blue), red 63 % clipped on this negative.
 No 1× image pass is in the capture. Calibration stays at 1× and the hardware shading still applies.
 
 ### 3.2 Options
 
 | Option | Passes | How | Status |
 |---|---|---|---|
-| **A. Two-pass merge** | 1× + k× | Merge per pixel, use the long pass where it is not clipped | Proposed default |
-| **B. Long pass only** | k× | Only if nothing clips (slides with dense areas, B&W) | Option, warns when red clips |
-| **C. Single pass, shorter red** | 1 | LPERIOD 3×, EXPR set so red integrates 1× | **Experiment first**: EXPR/G/B exist ("exposure time for red/green/blue channel of CCD"), are 0 in every capture, and may not be wired on this sensor |
+| **A. Two-pass merge** | 1× + k× | Merge per pixel, use the long pass where it is not clipped | Fallback that always works |
+| **B. Long pass only** | k× | What the vendor does (one pass, confirmed); fine where nothing clips (dense slides, B&W) | Option, warns when red clips |
+| **C. Single pass, shorter red** | 1 | LPERIOD 3×, EXPR set so red integrates 1× | **Experiment first** (vendor speed without the red clipping): EXPR/G/B exist ("exposure time for red/green/blue channel of CCD"), are 0 in every capture, and may not be wired on this sensor |
 
 Experiment for option C, without scanning film: run the calibration sequence with LPERIOD 42,000
 and EXPR = 14,000, then read the 128-line white reference. If red reads about the 1× level and
@@ -168,8 +168,8 @@ pass processed in stripes as it arrives; that is phase 7.
 | 7 | 7200 dpi and prescan variants, stripe processing | Needs captures at 7200 dpi |
 
 ## 8. Open questions
-1. **ME**: did the Plustek software make one carriage pass or two (listen for it, or time it:
-   one pass ≈ 2.3 min, two ≈ 3.7 min)? Which software and which ME setting was it?
+1. ~~ME: one pass or two?~~ One pass (confirmed). Still useful: the vendor's saved TIFF from that
+   scan, to see whether its red channel is clipped or filled from the preview.
 2. IR at 7200 dpi: worth a capture if you will use it.
 3. Do you scan B&W silver film? It decides how much effort goes into IR-failure detection.
 4. Is ~3.7 min per frame acceptable for ME at 3600 dpi, or should option C (single pass) be the
