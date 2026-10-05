@@ -108,7 +108,7 @@
     }
     for(let i=0;i<profile.frames.length;i++)
       assert(planned.get(i)===profile.frames[i].bytes,'Invalid capture profile: incomplete frame '+i);
-    const regs={}, frames=new Map(); let address=0, lastStatus=null, moveStartedAt=null;
+    const regs={}, frames=new Map(); let address=0, lastStatus=null, moveStartedAt=null, moveEvents=null;
     const lampFrames=profile.lamp?[profile.lamp.line.frame,profile.lamp.shading.frame,profile.lamp.dark.frame]:[];
     const check=hooks.check||(()=>{}), sleep=hooks.sleep||(ms=>new Promise(r=>setTimeout(r,ms)));
     const timeoutMs=hooks.timeoutMs||60000, log=hooks.log||(()=>{});
@@ -148,6 +148,9 @@
         // unless the scanner is genuinely still busy.
         if(writesMotorStart(op)&&lastStatus!==null&&(lastStatus&MOTORENB))
           await pollStatus({...ACK_OP,index:0,value:0x84,expected:[0]},[lastStatus],MOTORENB,0,'motor still enabled before start');
+        // Scanner events are counted from just before the start write, so the stop event of
+        // this move cannot be missed and older events (boot, buttons) are not taken for it.
+        if(writesMotorStart(op)) moveEvents=hooks.events?hooks.events():null;
         await send(op);
         if(writesMotorStart(op)){ lastStatus=null; moveStartedAt=now(); }
         return;
@@ -176,14 +179,34 @@
       check();
       if(op.kind==='delay'){
         if(op.timedStop){
-          // The vendor stops its first positioning move by writing 0x02/FEEDL=1 a fixed time
-          // after starting it (2.560 s and 2.572 s in the two captures); where the carriage ends
-          // up depends on that moment, so time it from the start write, not from the last op.
-          // Stopping at 1.23 s (old 1 s cap) left scans 2.1 mm early; not stopping ran the
-          // carriage for ~20 s to the end of its travel.
+          // The vendor stops its first positioning move by writing 0x02/FEEDL=1 0.8 ms after the
+          // scanner reports event 0x08 on its interrupt endpoint (2.560-2.572 s after the start in
+          // the captures). With the page listening to that endpoint, stop on the event itself;
+          // otherwise (or if no event comes) stop at the recorded moment, timed from the start
+          // write. Stopping at 1.23 s (old 1 s cap) left scans 2.1 mm early; not stopping ran
+          // the carriage for ~20 s to the end of its travel.
           assert(moveStartedAt!==null,'timed stop without a preceding motor start');
           const target=moveStartedAt+op.ms;
-          while(now()<target){ check(); await sleep(Math.max(1,Math.min(20,target-now()))); }
+          let source='timer';
+          if(moveEvents&&moveEvents.available()){
+            const earliest=moveStartedAt+op.ms*EVENT_EARLIEST, latest=target+EVENT_GRACE_MS;
+            source=null;
+            while(!source){
+              check();
+              const left=latest-now();
+              if(left<=0){ source='timer (no scanner event)'; break; }
+              const ev=await moveEvents.next(Math.min(50,left));
+              if(!ev) continue;
+              const at=Math.round(now()-moveStartedAt);
+              if(ev.value===POSITION_EVENT&&now()>=earliest){ source='scanner event'; break; }
+              log(`positioning move: ignored scanner event 0x${ev.value.toString(16).padStart(2,'0')} at +${at} ms`);
+            }
+          } else {
+            while(now()<target){ check(); await sleep(Math.max(1,Math.min(20,target-now()))); }
+          }
+          const at=Math.round(now()-moveStartedAt);
+          if(moveEvents&&moveEvents.available()) log(`positioning move stopped by ${source} at +${at} ms (recorded ${Math.round(op.ms)} ms)`);
+          if(hooks.positioned)hooks.positioned({source,ms:at,recordedMs:op.ms});
           continue;
         }
         await sleep(op.ms);continue;
@@ -376,6 +399,10 @@
   // the 128-line white frame (flicker) may be at most 0.6 % (official: 0.02-0.24 %).
   // 256 KB per bulk transfer (the helper allows 1 MB); big enough to hide round-trip latency,
   // small enough for a smooth progress bar and for usbfs/WinUSB to handle comfortably.
+  // Positioning event: the byte the scanner sends on its interrupt endpoint when move 1 reaches
+  // its stop point. Earlier events (below half the recorded time) or other values are ignored;
+  // without the event the move is stopped by timer EVENT_GRACE_MS after the recorded moment.
+  const POSITION_EVENT=0x08, EVENT_EARLIEST=0.5, EVENT_GRACE_MS=150;
   const CHUNK=0x40000, PACKET=512, THROUGHPUT_GRACE_S=6, THROUGHPUT_MIN=0.9;
   const LAMP_LIMITS={levelPct:10,balancePct:5,flickerPct:0.6,darkCounts:40};
   // Black level: the sequence replays the vendor's per-channel AFE offsets, which were calibrated

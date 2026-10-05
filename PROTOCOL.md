@@ -63,6 +63,17 @@ defined data type"). The app follows the vendor pattern for every frame.
 
 ---
 
+**Interrupt endpoint (0x83, 1-byte packets).** The vendor software keeps one read pending on it
+from boot and re-submits after every reply; it never polls the GPIO registers. In the 7200 dpi
+capture it received two bytes, both `0x08`: one 4 ms after the read was first opened (a state
+report) and one 2.571 s after positioning move 1 started, which the software answered 0.8 ms
+later by stopping the move. No front button was pressed during the capture, so the button codes
+are unknown; the page's button monitor (Diagnostics) logs every event to find them. The datasheet
+describes GPIO1–4 as "hot key" inputs whose state is latched until read; this scanner configures
+GPIO1–7 as inputs (0x6F = 0x80).
+
+---
+
 ## 2. Status registers
 
 ### 0x41 — main status
@@ -313,7 +324,9 @@ Around them:
 3. **AFE calibration** (frames 0–4).
 4. **Dark and white references** (frames 5, 6), then the shading upload and the scan slope tables.
 5. **Positioning move 1**: FEEDL 19,490 on the **slow** curve. The vendor **stops it after
-   2.560–2.572 s** by writing `0x02=0x08` and `FEEDL=1`; run to completion it would take ~20 s. The
+   2.560–2.572 s** by writing `0x02=0x08` and `FEEDL=1`, **0.8 ms after the scanner sends event
+   `0x08` on its interrupt endpoint** (see "Interrupt endpoint" below); it is an event, not a
+   timer. Run to completion the move would take ~20 s. The
    stop moment sets where the frame lands, so it must be timed from the start write.
 6. **Positioning move 2**: FEEDL 13,228 on the **fast** curve, run to completion (3.45 s), polled
    until status is 0xF4.

@@ -69,6 +69,17 @@ type Device interface {
 // ErrStall is returned when the device stalls an endpoint (WebUSB status "stall").
 var ErrStall = errors.New("endpoint stalled")
 
+// ErrTimeout is returned when a transfer times out. For interrupt reads it only means the
+// scanner had nothing to report.
+var ErrTimeout = errors.New("USB transfer timed out")
+
+// interruptReader is implemented by backends that can read the scanner's interrupt endpoint
+// with a timeout (Linux usbfs, Windows WinUSB). The scanner reports events there: a one-byte
+// 0x08 when the first positioning move reaches its stop point, and presumably the front buttons.
+type interruptReader interface {
+	Interrupt(ep uint8, data []byte, timeout time.Duration) (int, error)
+}
+
 type Endpoint struct {
 	EndpointNumber int    `json:"endpointNumber"`
 	Direction      string `json:"direction"`
@@ -159,6 +170,7 @@ func parseEndpoints(cfg []byte) []Endpoint {
 
 type server struct {
 	mu     sync.Mutex
+	intrMu sync.Mutex // held during an interrupt read; closeDev waits for it
 	dev    Device
 	token  string
 	port   int
@@ -167,6 +179,9 @@ type server struct {
 
 func (s *server) closeDev() {
 	if s.dev != nil {
+		// let a pending interrupt read (at most intrMaxWait) finish before the device goes away
+		s.intrMu.Lock()
+		defer s.intrMu.Unlock()
 		s.dev.Close()
 		s.dev = nil
 	}
@@ -331,6 +346,9 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/api/files/pickdir":
 		handleFilesPickDir(w, r) // blocks until the dialog closes; outside the USB lock
 		return
+	case "/api/intr":
+		s.handleIntr(w, r) // waits for a scanner event; outside the USB lock
+		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -408,4 +426,48 @@ func main() {
 		os.Exit(0)
 	}()
 	log.Fatal((&http.Server{Handler: s, ReadHeaderTimeout: 10 * time.Second}).Serve(ln))
+}
+
+const intrMaxWait = 2 * time.Second
+
+// POST /api/intr?ep=0x83&len=1&timeout=1000 -> the event bytes, 204 if nothing arrived in time,
+// 501 if this backend cannot read interrupt endpoints. It does not take the USB lock: an
+// interrupt endpoint is polled by the host controller, so a pending read neither delays the
+// page's control and bulk traffic nor loses an event (the scanner holds it until the next read).
+func (s *server) handleIntr(w http.ResponseWriter, r *http.Request) {
+	ep, e1 := qint(r, "ep", 8)
+	l, e2 := qint(r, "len", 16)
+	ms, e3 := qint(r, "timeout", 16)
+	if err := errors.Join(e1, e2, e3); err != nil || ep&0x80 == 0 || l == 0 || l > 64 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	timeout := time.Duration(ms) * time.Millisecond
+	if timeout <= 0 || timeout > intrMaxWait {
+		timeout = intrMaxWait
+	}
+	if !s.intrMu.TryLock() {
+		http.Error(w, "another interrupt read is pending", http.StatusTooManyRequests)
+		return
+	}
+	defer s.intrMu.Unlock()
+	s.mu.Lock()
+	d := s.dev
+	s.mu.Unlock()
+	if d == nil {
+		http.Error(w, "scanner not connected", http.StatusServiceUnavailable)
+		return
+	}
+	ir, ok := d.(interruptReader)
+	if !ok {
+		http.Error(w, "the "+backendName+" backend cannot read the interrupt endpoint", http.StatusNotImplemented)
+		return
+	}
+	data := make([]byte, l)
+	n, err := ir.Interrupt(uint8(ep), data, timeout)
+	if errors.Is(err, ErrTimeout) {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	s.transferResult(w, data, n, err)
 }

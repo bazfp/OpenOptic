@@ -182,6 +182,8 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
   <section>
     <details><summary>Diagnostics</summary>
       <div class="row"><button id="bHome" disabled>Home carriage</button><button id="bLamp" disabled>LED on/off</button><button id="bReconnect" disabled>Reconnect scanner</button></div>
+      <div class="row"><button id="bMonitor" disabled>Monitor buttons (60 s)</button></div>
+      <p class="small">The button monitor logs every scanner event and every change of the GPIO registers (0x6C/0x6D) while you press the front buttons. Copy the log lines it ends with, so the buttons can be mapped to scanning.</p>
       <div class="row"><button id="bTrace" disabled>Save USB trace of last scan</button><button id="bDry">Dry run (no scanner)</button></div>
       <p class="small">The trace is saved in the roll folder; check it with <code>tools/compare_trace.py</code>. Dry run uses a simulated scanner and writes real files, so you can check naming and folders. <a href="/experimental" style="color:var(--amber)">Experimental page</a> (custom resolution, crop, IR; unverified).</p>
     </details>
@@ -342,10 +344,67 @@ async function nativeOpen(){
     async transferOut(ep,data){
       const d=await nativeCall('/api/bulk?'+q({ep:ep&0x7F}),data);
       return d?{status:'ok',bytesWritten:data.byteLength}:{status:'stall',bytesWritten:0};
+    },
+    // Interrupt endpoint read with a timeout (the helper answers 204 when nothing arrived).
+    async interruptIn(ep,len,timeoutMs){
+      const r=await fetch('/api/intr?'+q({ep:0x80|ep,len,timeout:timeoutMs}),{method:'POST',headers:{'X-Token':window.NATIVE_USB.token}});
+      if(r.status===204) return {status:'timeout'};
+      if(r.status===501){ const e=new Error((await r.text()).trim()); e.name='Unsupported'; throw e; }
+      if(!r.ok) throw new Error((await r.text()).trim()||('helper returned HTTP '+r.status));
+      return {status:'ok',data:new Uint8Array(await r.arrayBuffer())};
     }
   };
 }
 if(window.NATIVE_USB) addEventListener('pagehide',()=>{ fetch('/api/close',{method:'POST',headers:{'X-Token':window.NATIVE_USB.token},keepalive:true}).catch(()=>{}); });
+
+// ---------------------------------------------------------------- scanner events (interrupt endpoint)
+// The scanner reports events on its interrupt endpoint (0x83): one byte, 0x08 in the captures,
+// sent once when the endpoint is first read and again when the first positioning move reaches
+// its stop point (the vendor stops the move 0.8 ms later). The front buttons presumably report
+// here too. One listener runs while connected; the scan sequence and the button monitor read
+// events through cursors, and every event is logged.
+const scannerEvents={state:'off',seq:0,list:[],waiters:new Set(),run:0,firstOfRun:0};
+function scannerEventCursor(){
+  let since=scannerEvents.seq;
+  return {available:()=>scannerEvents.state==='on',
+    next(ms){ return new Promise(resolve=>{
+      const hit=scannerEvents.list.find(e=>e.seq>since);
+      if(hit){ since=hit.seq; return resolve(hit); }
+      const w={done(e){ clearTimeout(w.timer); scannerEvents.waiters.delete(w); if(e) since=e.seq; resolve(e); }};
+      w.timer=setTimeout(()=>w.done(null),Math.max(0,ms)); scannerEvents.waiters.add(w);
+    }); }};
+}
+function scannerEvent(bytes){
+  const e={seq:++scannerEvents.seq,value:bytes[0],bytes:[...bytes],t:performance.now()};
+  const initial=scannerEvents.firstOfRun===0; if(initial) scannerEvents.firstOfRun=e.seq;
+  scannerEvents.list.push(e); if(scannerEvents.list.length>200) scannerEvents.list.shift();
+  log('ok',`scanner event ${[...bytes].map(b=>hex(b)).join(' ')}${initial?' (initial state report when listening starts)':''}`);
+  for(const w of [...scannerEvents.waiters]) w.done(e);
+}
+async function startScannerEvents(){
+  const run=++scannerEvents.run, d=dev; scannerEvents.firstOfRun=0;
+  const ep=d.configuration.interfaces[0].alternate.endpoints.find(e=>e.type==='interrupt'&&e.direction==='in');
+  if(!ep){ scannerEvents.state='unsupported'; log('w','no interrupt endpoint listed: scanner events unavailable, positioning uses the recorded timing'); return; }
+  const len=Math.max(1,Math.min(64,ep.packetSize||1));
+  scannerEvents.state='on'; let failures=0;
+  log('io',`listening for scanner events on endpoint ${hex(0x80|ep.endpointNumber)}`);
+  while(run===scannerEvents.run&&dev===d){
+    try{
+      const r=d.interruptIn?await d.interruptIn(ep.endpointNumber,len,1000):await d.transferIn(ep.endpointNumber,len);
+      if(run!==scannerEvents.run||dev!==d) break;
+      failures=0;
+      if(r.status==='ok'){ const b=r.data instanceof DataView?new Uint8Array(r.data.buffer,r.data.byteOffset,r.data.byteLength):r.data; if(b.length) scannerEvent(b); }
+      else if(r.status==='stall'&&d.clearHalt){ await d.clearHalt('in',ep.endpointNumber).catch(()=>{}); }
+    }catch(e){
+      if(run!==scannerEvents.run||dev!==d) break;
+      if(e.name==='Unsupported'){ scannerEvents.state='unsupported'; log('w',`scanner events unavailable (${e.message}); positioning uses the recorded timing`); return; }
+      if(++failures>=3){ scannerEvents.state='error'; log('w',`scanner events stopped (${e.message}); positioning uses the recorded timing`); return; }
+      await sleep(500);
+    }
+  }
+  if(run===scannerEvents.run) scannerEvents.state='off';
+}
+function stopScannerEvents(){ scannerEvents.run++; scannerEvents.state='off'; for(const w of [...scannerEvents.waiters]) w.done(null); }
 
 
 // Homing and stopping use motion.js: only motor primitives recorded from the Plustek software
@@ -375,7 +434,7 @@ async function connect(){
   const bcd=(dev.deviceVersionMajor<<8)|(dev.deviceVersionMinor<<4)|dev.deviceVersionSubminor;
   $('devline').innerHTML=`<b>${dev.productName||'07b3:0c3b'}</b>  bcdDevice ${dev.deviceVersionMajor}.${dev.deviceVersionMinor}${dev.deviceVersionSubminor}  ${dev.backend||'WebUSB'}`;
   if(bcd!==0x400) throw new Error('This scanner reports bcdDevice '+hex(bcd,4)+'. The recorded profiles are for the 7600i v1 (4.00) only; use the experimental page.');
-  await boot(); await home();
+  await boot(); startScannerEvents(); await home();
   if(dry){ dry=false; try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); settings={...defaults,...(s?.settings||{})}; records=s?.records||[]; }catch(e){} selected=null; toUI(); renderRoll(); }
   connected=true; lampOnAt=null;
   log('ok','scanner ready');
@@ -410,7 +469,8 @@ async function acquire(key, requested=settings){
   const dl=p.acquisitionOptions?.dummyLines;
   log('',`sensor pixels: ${scanSettings.pixelSampling||'deletion'}; exposure: recorded (1×); dummy lines: ${dl&&dl.used!==dl.recorded?`${dl.used} (recorded ${dl.recorded}), motor cruise ${p.motorCruise.recorded}→${p.motorCruise.used}, needs ${(p.scan.bytesPerSecond/1e6).toFixed(2)} MB/s`:'as recorded'}`);
   if(p.acquisitionOptions?.pixelSampling==='average') log('w','Experimental sensor averaging: live calibration reads use averaging, but AFE/shading and comparison references are recorded in deletion mode. This is not fresh calibration.' );
-  const hooks={check:checkCancel,log:m=>log('io',m),sleep:async ms=>{for(let left=ms;left>0;left-=50){checkCancel();await sleep(Math.min(left,50));}},
+  let positioning=null;
+  const hooks={check:checkCancel,log:m=>log('io',m),events:dry?undefined:()=>scannerEventCursor(),positioned:x=>{positioning=x;},sleep:async ms=>{for(let left=ms;left>0;left-=50){checkCancel();await sleep(Math.min(left,50));}},
     progress:(frame,got,total)=>{if(frame===p.mainFrame)progress(got/total);}};
   const scanning=()=>say(`Scanning ${key==='full7200'?'at 7200 dpi':key==='full'?'at 3600 dpi':'quick pass'} (about ${p.scan.seconds>=100?Math.round(p.scan.seconds/60*2)/2+' min':Math.round(p.scan.seconds)+' s'})…`,'busy');
   if(!dry){
@@ -478,7 +538,7 @@ async function acquire(key, requested=settings){
     finally{ progress(0); }
   }
   if(lamp.warning) log('w',`scanned with the illumination outside the official range: ${lamp.warning}`);
-  return {bytes,profile:p,lamp};
+  return {bytes,profile:p,lamp,positioning};
 }
 class LampNotReady extends Error{ constructor(issues){ super('illumination not settled: '+issues.join('; ')); this.issues=issues; } }
 const LAMP_RETRY_MS=15000, LAMP_MAX_WAIT_MS=60000;   // an LED settles at once; this only covers transients
@@ -714,7 +774,7 @@ $('pkNative').onclick=async()=>{
 };
 
 // ---------------------------------------------------------------- buttons, keys, guard
-function enableScan(){ ['pixelSampling','exposureMultiplier','dummyLines'].forEach(id=>$(id).disabled=operationActive||!!pending); const ok=(connected||dry)&&!pending&&!operationActive; $('bScan').disabled=(connected||dry)?!ok:operationActive; $('bPreview').disabled=!ok; ['bHome','bLamp','bReconnect'].forEach(i=>$(i).disabled=!connected||operationActive); $('bTrace').disabled=!(connected&&trace.length>traceMark); $('bStop').disabled=!connected; }
+function enableScan(){ ['pixelSampling','exposureMultiplier','dummyLines'].forEach(id=>$(id).disabled=operationActive||!!pending); const ok=(connected||dry)&&!pending&&!operationActive; $('bScan').disabled=(connected||dry)?!ok:operationActive; $('bPreview').disabled=!ok; ['bHome','bLamp','bReconnect','bMonitor'].forEach(i=>$(i).disabled=!connected||operationActive); $('bTrace').disabled=!(connected&&trace.length>traceMark); $('bStop').disabled=!connected; }
 function guard(fn){ return async()=>{ if(operationActive) return; operationActive=true; cancelFlag=false; enableScan(); $('bStop').disabled=!(connected||dry);
   try{ await fn(); }
   catch(e){ if(e instanceof Cancelled){ log('w','stopped'); say('Stopped. The carriage has been parked.'); try{ cancelFlag=false; await stopMotor(); await home(); }catch(_){} }
@@ -724,6 +784,7 @@ function guard(fn){ return async()=>{ if(operationActive) return; operationActiv
       console.error(e); if(connected&&e.name!=='ScanConfigurationError'){ try{ await stopMotor(); }catch(_){} } } progress(0); }
   finally{ operationActive=false; enableScan(); } }; }
 async function connectScanner(){
+  stopScannerEvents();
   if(dev){ connected=false; refreshName(); try{ await dev.close(); }catch(_){} dev=null; }
   say('Connecting…','busy');
   try{ await connect(); } finally { refreshName(); }
@@ -741,7 +802,43 @@ $('bReconnect').onclick=guard(connectScanner);
 $('bPreview').onclick=guard(checkFraming);
 $('bRetry').onclick=guard(retrySave);
 $('bDiscard').onclick=discardPending;
-$('bStop').onclick=()=>{ if(!operationActive&&!connected) return; if(!operationActive) return guard(async()=>{ await stopMotor(); await home(); say('Carriage parked.'); })(); cancelFlag=true; log('w','stop requested; parking after the current transfer'); };
+$('bStop').onclick=()=>{ if(!operationActive&&!connected) return; if(!operationActive) return guard(async()=>{ await stopMotor(); await home(); say('Carriage parked.'); })(); cancelFlag=true; log('w',monitoring?'stopping the button monitor':'stop requested; parking after the current transfer'); };
+// Button monitor: watches the interrupt endpoint (through the event listener) and polls the GPIO
+// input registers, logging every event and change, so the front buttons can be identified.
+let monitoring=false;
+async function monitorButtons(){
+  monitoring=true;
+  const MS=60000, t0=performance.now(), cursor=scannerEventCursor(), events=[], gpio=[], prev={};
+  const inputMask={0x6C:~(shadow[0x6E]??0x4C)&0xFF,0x6D:~(shadow[0x6F]??0x80)&0xFF};   // GPOE bit 0 = input
+  const gpioName=(r,b)=>`GPIO${(r===0x6D?1:9)+b}`;
+  const summary=()=>{
+    const ev={}; for(const e of events){ const k=e.bytes.map(b=>hex(b)).join(' '); ev[k]=(ev[k]||0)+1; }
+    const ch={}; for(const g of gpio) for(let b=0;b<8;b++) if((g.from^g.to)>>b&1){ const k=gpioName(g.reg,b)+((inputMask[g.reg]>>b)&1?'':' (output)'); ch[k]=(ch[k]||0)+1; }
+    const e=Object.entries(ev).map(([k,n])=>`${k} ×${n}`).join(', ')||'none', c=Object.entries(ch).map(([k,n])=>`${k} ×${n}`).join(', ')||'none';
+    return {e,c};
+  };
+  try{
+    log('ok',`button monitor started: scanner events ${scannerEvents.state}; GPIO inputs 0x6C mask ${hex(inputMask[0x6C])}, 0x6D mask ${hex(inputMask[0x6D])}`);
+    while(!cancelFlag&&performance.now()-t0<MS){
+      for(const r of [0x6C,0x6D]){
+        const v=await readReg(r), at=((performance.now()-t0)/1000).toFixed(1);
+        if(prev[r]===undefined) log('',`GPIO ${hex(r)} = ${hex(v)} at start`);
+        else if(prev[r]!==v){
+          const bits=[...Array(8).keys()].filter(b=>(prev[r]^v)>>b&1).map(b=>`${gpioName(r,b)}${(inputMask[r]>>b)&1?'':' (output)'} → ${v>>b&1}`);
+          gpio.push({reg:r,from:prev[r],to:v}); log('ok',`+${at} s GPIO ${hex(r)}: ${hex(prev[r])} → ${hex(v)} (${bits.join(', ')})`);
+        }
+        prev[r]=v;
+      }
+      const ev=await cursor.next(200); if(ev) events.push(ev);
+      const {e,c}=summary();
+      say(`Button monitor, ${Math.max(0,Math.ceil((MS-(performance.now()-t0))/1000))} s left: press each front button a few times, about a second apart. Events: ${e}. GPIO changes: ${c}. Stop ends it early.`,'busy');
+    }
+    const {e,c}=summary();
+    log('ok',`BUTTON MONITOR RESULT · events on ${scannerEvents.state==='on'?'interrupt endpoint 0x83':'interrupt endpoint (unavailable: '+scannerEvents.state+')'}: ${e} · GPIO changes: ${c}`);
+    say(`Button monitor finished. Events: ${e}. GPIO changes: ${c}. The Log tab has the details.`,'ok');
+  } finally { monitoring=false; cancelFlag=false; }
+}
+$('bMonitor').onclick=guard(monitorButtons);
 $('bHome').onclick=guard(async()=>{ await home(); say('Carriage parked.'); });
 $('bLamp').onclick=guard(async()=>{ await lampSet(lampOnAt===null); });
 $('bNextFree').onclick=guard(async()=>{ fromUI(); checkReady(); rescan=null; settings.next=await Roll.nextFree(store,settings,settings.next); toUI(); persist(); say(`Next free number: ${safeBase(settings.next)}`); });

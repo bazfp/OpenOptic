@@ -117,7 +117,7 @@ func mapErr(err error) error {
 	case errors.Is(err, syscall.EPIPE):
 		return ErrStall
 	case errors.Is(err, syscall.ETIMEDOUT):
-		return errors.New("USB transfer timed out")
+		return ErrTimeout
 	case errors.Is(err, syscall.ENODEV):
 		return errors.New("scanner disconnected")
 	case errors.Is(err, syscall.EOVERFLOW):
@@ -145,9 +145,19 @@ func (d *linuxDev) Bulk(ep uint8, data []byte, timeout time.Duration) (int, erro
 	n, err := ioctl(d.fd, ioBulk, unsafe.Pointer(&bt))
 	runtime.KeepAlive(data)
 	if err != nil {
-		return n, fmt.Errorf("bulk %s endpoint 0x%02x, %d bytes: %w", map[bool]string{true: "read", false: "write"}[ep&0x80 != 0], ep, len(data), mapErr(err))
+		if e := mapErr(err); e == ErrTimeout || e == ErrStall {
+			return n, e
+		} else {
+			return n, fmt.Errorf("bulk %s endpoint 0x%02x, %d bytes: %w", map[bool]string{true: "read", false: "write"}[ep&0x80 != 0], ep, len(data), e)
+		}
 	}
 	return n, nil
+}
+
+// Interrupt reads an interrupt endpoint; USBDEVFS_BULK handles interrupt pipes as well. Safe to
+// call while another goroutine runs control/bulk transfers on the same file descriptor.
+func (d *linuxDev) Interrupt(ep uint8, data []byte, timeout time.Duration) (int, error) {
+	return d.Bulk(ep, data, timeout)
 }
 
 func (d *linuxDev) Close() error {

@@ -130,6 +130,16 @@ Only the main scan changes: LINESEL is written in its start write, and its motor
 
 The costs: each line is exposed while the carriage moves 2 or 3 times further, so vertical detail is softer (closer to SANE's default); the page must sustain the higher data rate or it stops the scan; and without dummy lines a restart after backtracking may leave a visible band. This mode has not been tested on hardware. The frame sidecar records the setting under `acquisition.options.dummyLines` and `acquisition.scanTiming`.
 
+## Scanner events, front buttons and the positioning stop
+
+While connected, the page listens on the scanner's interrupt endpoint (0x83), as the Plustek software does, and logs every event (**Log** tab: `scanner event 0x..`).
+
+**Positioning stop.** The captures showed the official software stops the first positioning move 0.8 ms after the scanner sends event `0x08`, which the app had been imitating with a fixed 2.56–2.57 s timer. The scan now stops that move on the event itself, accepting only `0x08` and only after half the recorded time. If no event arrives by 150 ms after the recorded moment, it stops by timer and logs it. When events are unavailable it uses the recorded timing exactly, as before. The log line `positioning move stopped by … at +… ms` and the frame sidecar (`acquisition.positioningStop`) record which happened.
+
+**Button monitor.** **Diagnostics → Monitor buttons (60 s)** logs every scanner event and every change of GPIO registers 0x6C/0x6D while you press the front buttons, then writes a `BUTTON MONITOR RESULT` line. Once the codes are known, a button can be mapped to **Scan & Save**.
+
+Event support depends on the helper's USB backend: Linux (usbfs) and Windows with WinUSB read the interrupt endpoint; Windows with Plustek's usbscan driver and macOS report it as unavailable and keep the timed stop. Under plain WebUSB the browser reads it directly.
+
 ## Removing frames from the roll list
 
 Select a frame and press **Remove … from list** to drop it from the roll list and the roll record JSON. Files on disk are never deleted by the page.

@@ -8,6 +8,7 @@ import (
 	"log"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -71,6 +72,7 @@ const (
 type winDev struct {
 	file     syscall.Handle
 	iface    uintptr
+	tmu      sync.Mutex // the interrupt read runs alongside control/bulk transfers
 	timeouts map[uint8]uint32
 }
 
@@ -166,6 +168,8 @@ func openWinUSB(path string) (Device, error) {
 func (d *winDev) Backend() string { return "winusb" }
 
 func (d *winDev) setTimeout(pipe uint8, t time.Duration) {
+	d.tmu.Lock()
+	defer d.tmu.Unlock()
 	ms := uint32(t.Milliseconds())
 	if d.timeouts[pipe] == ms {
 		return
@@ -187,7 +191,7 @@ func mapErr(e error) error {
 		case errGenFailure:
 			return ErrStall
 		case errSemTimeout:
-			return errors.New("USB transfer timed out")
+			return ErrTimeout
 		}
 	}
 	return e
@@ -223,6 +227,12 @@ func (d *winDev) Bulk(ep uint8, data []byte, timeout time.Duration) (int, error)
 		return 0, err
 	}
 	return int(n), nil
+}
+
+// Interrupt reads an interrupt endpoint; WinUsb_ReadPipe serves interrupt pipes too, and each
+// pipe keeps its own timeout policy.
+func (d *winDev) Interrupt(ep uint8, data []byte, timeout time.Duration) (int, error) {
+	return d.Bulk(ep, data, timeout)
 }
 
 func (d *winDev) Close() error {

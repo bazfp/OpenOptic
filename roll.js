@@ -33,13 +33,13 @@
       const taken=await ctx.store.exists(names.map(n=>n.name));
       if(taken.length)throw new NameInUse(taken);
     }
-    const started=new Date(), {bytes,profile,trace,lamp}=await ctx.acquire(settings.profile);
+    const started=new Date(), {bytes,profile,trace,lamp,positioning}=await ctx.acquire(settings.profile);
     const align=CaptureRuntime.measureShifts(bytes,profile), g=CaptureRuntime.geometry(profile,align.shifts);
     const offsets=settings.blackLevel&&lamp?.dark?lamp.dark.delta:null;   // per-channel black-level correction
     const pv=CaptureRuntime.previewPlanes(bytes,g,1200,offsets,settings.mirror!==false);
     const preview=await ctx.makePreview(pv.planes,pv.g,settings);   // {large, thumb} (data URLs in the UI)
     const pending={number,base:baseName(settings.prefix,number,settings.digits),names,overwrite,
-      settings:{...settings},started:started.toISOString(),bytes,profile,g,align,lamp:lamp||null,offsets,preview,trace:trace||null,saved:[]};
+      settings:{...settings},started:started.toISOString(),bytes,profile,g,align,lamp:lamp||null,positioning:positioning||null,offsets,preview,trace:trace||null,saved:[]};
     return saveFrame(ctx,pending);
   }
 
@@ -91,6 +91,7 @@
       acquisition:{profile:profile.name,sourceCapture:profile.source,sourceCaptureSha256:profile.sha256,
         samplingDpi:{x:g.dpi,y:g.yres},delivered:{width:g.pixels,lines:g.lincnt},
         registers:f.regs,moves:profile.moves,
+        positioningStop:p.positioning?{...p.positioning,note:'first positioning move: stopped on the scanner event 0x08 (interrupt endpoint) when available, else at the recorded time'}:null,
         scanTiming:profile.scan?{lineSel:profile.scan.lineSel,lineSeconds:profile.scan.lineSeconds,bytesPerSecond:profile.scan.bytesPerSecond,motorCruise:profile.motorCruise||'recorded'}:null,
         options:profile.acquisitionOptions||{pixelSampling:'deletion',exposureMultiplier:1,dummyLines:{setting:'recorded',recorded:profile.scan?.lineSel??null,used:profile.scan?.lineSel??null},
           averagingReducesPixels:false,calibration:'recorded vendor AFE and shading'},

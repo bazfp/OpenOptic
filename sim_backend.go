@@ -6,18 +6,32 @@ package main
 
 import (
 	"encoding/binary"
+	"os"
 	"time"
 )
 
 const backendName = "simulated"
 
 type simDev struct {
-	regs [256]byte
-	addr byte
+	regs   [256]byte
+	addr   byte
+	events chan byte
+	pos    int // carriage position in steps from the home sensor
 }
 
 func openDevice(vid, pid uint16) (Device, error) {
-	d := &simDev{}
+	d := &simDev{events: make(chan byte, 8)}
+	d.events <- 0x08                             // the real scanner reports 0x08 as soon as the first interrupt read is opened
+	if os.Getenv("OPTICFILM_SIM_BUTTON") != "" { // developer aid: a fake button press every 1.5 s
+		go func() {
+			for range time.Tick(1500 * time.Millisecond) {
+				select {
+				case d.events <- 0x01:
+				default:
+				}
+			}
+		}()
+	}
 	d.regs[0x41] = 0x88
 	return d, nil
 }
@@ -59,6 +73,18 @@ func (d *simDev) Control(rt, req uint8, val, idx uint16, data []byte, _ time.Dur
 			} else {
 				for i := 0; i+1 < len(data); i += 2 {
 					d.regs[data[i]] = data[i+1]
+					if data[i] == 0x0F && data[i+1] == 1 { // moves finish at once
+						steps := int(d.regs[0x3D]&0x0F)<<16 | int(d.regs[0x3E])<<8 | int(d.regs[0x3F])
+						if d.regs[0x02]&0x04 != 0 {
+							d.pos = max(0, d.pos-steps)
+						} else {
+							d.pos += steps
+						}
+						d.regs[0x41] = 0x80 | 0x20
+						if d.pos == 0 {
+							d.regs[0x41] |= 0x08
+						}
+					}
 				}
 			}
 		}
@@ -87,6 +113,16 @@ func (d *simDev) Bulk(ep uint8, data []byte, _ time.Duration) (int, error) {
 		}
 	}
 	return len(data), nil
+}
+
+func (d *simDev) Interrupt(ep uint8, data []byte, timeout time.Duration) (int, error) {
+	select {
+	case v := <-d.events:
+		data[0] = v
+		return 1, nil
+	case <-time.After(timeout):
+		return 0, ErrTimeout
+	}
 }
 
 func (d *simDev) Close() error { return nil }
