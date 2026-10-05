@@ -216,7 +216,7 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
         <select id="btn3"><option value="scan">Scan &amp; Save</option><option value="preview">Check framing</option><option value="stop">Stop</option><option value="none">nothing</option></select></div>
       <div class="field" id="btn2Row"><label for="btn2">Front button B</label>
         <select id="btn2"><option value="scan">Scan &amp; Save</option><option value="preview">Check framing</option><option value="stop">Stop</option><option value="none">nothing</option></select></div>
-      <div class="note"><b class="lead">Choose what each front button does.</b><ul><li><b>A</b> = GPIO3 (event 0x04), <b>B</b> = GPIO2 (event 0x02). Pressing one highlights its row.</li><li>Ignored while the scanner is busy, unless set to Stop.</li></ul></div>
+      <div class="note"><b class="lead">Choose what each front button does.</b><ul><li><b>A</b> = GPIO3 (event 0x04), <b>B</b> = GPIO2 (event 0x02). Pressing one highlights its row.</li><li>Ignored while the scanner is busy, unless set to Stop.</li><li>Presses come from the scanner’s event endpoint, with GPIO polling as a backup while idle. Each press is logged (Log tab), including why it was ignored.</li></ul></div>
     </details>
   </section>
 
@@ -394,6 +394,7 @@ async function nativeOpen(){
       const r=await fetch('/api/intr?'+q({ep:0x80|ep,len,timeout:timeoutMs}),{method:'POST',headers:{'X-Token':window.NATIVE_USB.token}});
       if(r.status===204) return {status:'timeout'};
       if(r.status===501){ const e=new Error((await r.text()).trim()); e.name='Unsupported'; throw e; }
+      if(r.status===429){ const e=new Error('interrupt read pending'); e.name='Busy'; throw e; }
       if(!r.ok) throw new Error((await r.text()).trim()||('helper returned HTTP '+r.status));
       return {status:'ok',data:new Uint8Array(await r.arrayBuffer())};
     }
@@ -434,21 +435,49 @@ function eventMeaning(v){
   if(v&~0x0E) parts.push(`unknown bits ${hex(v&~0x0E)}`);
   return parts.join(' + ')||'no bits set';
 }
-function frontButtons(e){
-  for(const b of FRONT_BUTTONS){
-    if(!(e.value&b.bit)) continue;
-    const row=$(b.key+'Row'); row.classList.add('pressed'); setTimeout(()=>row.classList.remove('pressed'),600);
-    if(monitoring) continue;
-    const action=settings[b.key], what=`front button ${b.name}`;
-    if(action==='none') continue;
-    if(action==='stop'){ if(operationActive){ log('ok',`${what}: Stop`); $('bStop').click(); } continue; }
-    if(operationActive){ log('w',`${what}: ignored, the scanner is busy`); continue; }
-    if(pending||$('picker').open){ log('w',`${what}: ignored (${pending?'save or discard the unsaved frame first':'folder dialog open'})`); continue; }
-    const target=action==='scan'?'bScan':'bPreview';
-    if($(target).disabled){ log('w',`${what}: ignored, ${action==='scan'?'scanning':'framing'} is not available now`); continue; }
-    log('ok',`${what}: ${action==='scan'?'Scan & Save':'Check framing'}`); $(target).click();
+function frontButtons(e){ for(const b of FRONT_BUTTONS) if(e.value&b.bit) pressButton(b,'event'); }
+// A press can arrive twice (interrupt event and GPIO poll): one action per press.
+const lastPress={};
+function pressButton(b,via){
+  const now=performance.now(); if(now-(lastPress[b.key]||-1e9)<800) return; lastPress[b.key]=now;
+  const row=$(b.key+'Row'); row.classList.add('pressed'); setTimeout(()=>row.classList.remove('pressed'),600);
+  if(monitoring) return;
+  const action=settings[b.key], what=`front button ${b.name}${via==='poll'?' (GPIO poll)':''}`;
+  if(action==='none'){ log('',`${what}: set to do nothing`); return; }
+  if(action==='stop'){ if(operationActive){ log('ok',`${what}: Stop`); $('bStop').click(); } else log('',`${what}: Stop (nothing running)`); return; }
+  if(operationActive){ log('w',`${what}: ignored, the scanner is busy`); return; }
+  if(pending||$('picker').open){ log('w',`${what}: ignored (${pending?'save or discard the unsaved frame first':'folder dialog open'})`); return; }
+  const target=action==='scan'?'bScan':'bPreview';
+  if($(target).disabled){ log('w',`${what}: ignored, ${action==='scan'?'scanning':'framing'} is not available now`); return; }
+  log('ok',`${what}: ${action==='scan'?'Scan & Save':'Check framing'}`); $(target).click();
+}
+// Backup for the interrupt endpoint: while the scanner is idle, poll the GPIO inputs (0x6D:
+// GPIO1-8) as the button monitor does, and treat a button bit leaving its idle level as a press.
+// Reads bypass the USB trace and pause whenever an operation runs (see guard()).
+const gpioPoll={run:0,busy:null};
+async function quietReadReg(reg){
+  const r=await dev.controlTransferOut({requestType:'vendor',recipient:'device',request:0x0C,value:0x83,index:0},Uint8Array.of(reg));
+  if(r.status!=='ok') throw new Error('register select failed');
+  for(let i=0;i<10;i++){ const a=await rawIn(0x0C,0x8E,0x20,1); if(a[0]&1) break; }
+  return (await rawIn(0x0C,0x84,0,1))[0];
+}
+async function startButtonPoll(){
+  const run=++gpioPoll.run, d=dev; let idle=null, prev=null, errors=0;
+  while(run===gpioPoll.run&&dev===d){
+    await sleep(120);
+    if(operationActive||monitoring||!connected||dry||run!==gpioPoll.run||dev!==d) continue;
+    let v;
+    try{ gpioPoll.busy=quietReadReg(0x6D); v=await gpioPoll.busy; errors=0; }
+    catch(e){ if(++errors===5) log('w',`front-button polling paused (${e.message}); retrying`); await sleep(Math.min(5000,250*errors)); continue; }
+    finally{ gpioPoll.busy=null; }
+    if(idle===null){ idle=v; prev=v; log('io',`front buttons: GPIO poll idle level ${hex(v)}`); continue; }
+    // other inputs changed (holder sensor, or a garbled read): adopt them only once seen twice running
+    if((v^idle)&~0x06){ if(v===prev) idle=(idle&0x06)|(v&~0x06); prev=v; continue; }
+    for(const b of FRONT_BUTTONS){ const was=(prev^idle)&b.bit, is=(v^idle)&b.bit; if(is&&!was) pressButton(b,'poll'); }
+    prev=v;
   }
 }
+function stopButtonPoll(){ gpioPoll.run++; }
 async function startScannerEvents(){
   const run=++scannerEvents.run, d=dev;
   const ep=d.configuration.interfaces[0].alternate.endpoints.find(e=>e.type==='interrupt'&&e.direction==='in');
@@ -460,14 +489,17 @@ async function startScannerEvents(){
     try{
       const r=d.interruptIn?await d.interruptIn(ep.endpointNumber,len,1000):await d.transferIn(ep.endpointNumber,len);
       if(run!==scannerEvents.run||dev!==d) break;
+      if(failures>=3){ scannerEvents.state='on'; log('ok','scanner events resumed'); }
       failures=0;
       if(r.status==='ok'){ const b=r.data instanceof DataView?new Uint8Array(r.data.buffer,r.data.byteOffset,r.data.byteLength):r.data; if(b.length) scannerEvent(b); }
       else if(r.status==='stall'&&d.clearHalt){ await d.clearHalt('in',ep.endpointNumber).catch(()=>{}); }
     }catch(e){
       if(run!==scannerEvents.run||dev!==d) break;
-      if(e.name==='Unsupported'){ scannerEvents.state='unsupported'; log('w',`scanner events unavailable (${e.message}); positioning uses the recorded timing`); return; }
-      if(++failures>=3){ scannerEvents.state='error'; log('w',`scanner events stopped (${e.message}); positioning uses the recorded timing`); return; }
-      await sleep(500);
+      if(e.name==='Unsupported'){ scannerEvents.state='unsupported'; log('w',`scanner events unavailable (${e.message}); positioning uses the recorded timing, front buttons use GPIO polling`); return; }
+      if(e.name==='Busy'){ await sleep(300); continue; }          // a previous read is still pending (reconnect)
+      // never give up while connected: back off, report once, resume when reads work again
+      if(++failures===3){ scannerEvents.state='error'; log('w',`scanner events interrupted (${e.message}); retrying. Positioning uses the recorded timing meanwhile, front buttons use GPIO polling`); }
+      await sleep(Math.min(5000,500*failures));
     }
   }
   if(run===scannerEvents.run) scannerEvents.state='off';
@@ -502,7 +534,7 @@ async function connect(){
   const bcd=(dev.deviceVersionMajor<<8)|(dev.deviceVersionMinor<<4)|dev.deviceVersionSubminor;
   $('devline').innerHTML=`<b>${dev.productName||'07b3:0c3b'}</b>  bcdDevice ${dev.deviceVersionMajor}.${dev.deviceVersionMinor}${dev.deviceVersionSubminor}  ${dev.backend||'WebUSB'}`;
   if(bcd!==0x400) throw new Error('This scanner reports bcdDevice '+hex(bcd,4)+'. The recorded profiles are for the 7600i v1 (4.00) only; use the experimental page.');
-  await boot(); startScannerEvents(); await home();
+  await boot(); startScannerEvents(); await home(); startButtonPoll();
   if(dry){ dry=false; try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); settings={...defaults,...(s?.settings||{})}; records=s?.records||[]; }catch(e){} selected=null; toUI(); renderRoll(); }
   connected=true; lampOnAt=null;
   log('ok','scanner ready');
@@ -527,7 +559,8 @@ async function warmIfNeeded(){
 }
 function scheduleLampOff(){
   clearTimeout(lampTimer); if(dry||!connected) return;
-  lampTimer=setTimeout(async()=>{ if(operationActive||lampOnAt===null) return; try{ await lampSet(false); log('','LED switched off after 15 min idle'); }catch(e){ log('w','LED off failed: '+e.message); } },LAMP_IDLE_MS);
+  lampTimer=setTimeout(async()=>{ if(operationActive||lampOnAt===null) return; operationActive=true;
+    try{ if(gpioPoll.busy) await gpioPoll.busy.catch(()=>{}); await lampSet(false); log('','LED switched off after 15 min idle'); }catch(e){ log('w','LED off failed: '+e.message); } finally{ operationActive=false; } },LAMP_IDLE_MS);
 }
 
 // ---------------------------------------------------------------- acquisition (recorded vendor profiles)
@@ -932,7 +965,7 @@ $('pkNative').onclick=async()=>{
 // ---------------------------------------------------------------- buttons, keys, guard
 function enableScan(){ ['pixelSampling','multiExposure','meFactor','infrared','dummyLines'].forEach(id=>$(id).disabled=operationActive||!!pending); const ok=(connected||dry)&&!pending&&!operationActive; $('bScan').disabled=(connected||dry)?!ok:operationActive; $('bPreview').disabled=!ok; ['bHome','bLamp','bReconnect','bMonitor'].forEach(i=>$(i).disabled=!connected||operationActive); $('bTrace').disabled=!(connected&&trace.length>traceMark); $('bStop').disabled=!connected; }
 function guard(fn){ return async()=>{ if(operationActive) return; operationActive=true; cancelFlag=false; enableScan(); $('bStop').disabled=!(connected||dry);
-  try{ await fn(); }
+  try{ if(gpioPoll.busy) await gpioPoll.busy.catch(()=>{}); await fn(); }
   catch(e){ if(e instanceof Cancelled){ log('w','stopped'); say('Stopped. The carriage has been parked.'); try{ cancelFlag=false; await stopMotor(); await home(); }catch(_){} }
     else { const slow=e.name==='ThroughputTooLow';
       log('err',e.message);
@@ -940,7 +973,7 @@ function guard(fn){ return async()=>{ if(operationActive) return; operationActiv
       console.error(e); if(connected&&e.name!=='ScanConfigurationError'){ try{ await stopMotor(); }catch(_){} } } progress(0); }
   finally{ operationActive=false; enableScan(); } }; }
 async function connectScanner(){
-  stopScannerEvents();
+  stopScannerEvents(); stopButtonPoll();
   if(dev){ connected=false; refreshName(); try{ await dev.close(); }catch(_){} dev=null; }
   say('Connecting…','busy');
   try{ await connect(); } finally { refreshName(); }
