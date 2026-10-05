@@ -232,6 +232,11 @@ multi-exposure pass. Two modes:
   orange-mask red channel on Lucky film) come from the normal pass only. Output stays linear 16-bit
   at the normal-pass scale, ready for negative converters. On Kodak Gold shadow noise drops by
   about a quarter in red and green and nearly half in blue.
+
+Time: the long pass's line time is its exposure, so with dummy lines off a k× pass takes k × 40 s
+(2× 79 s, 3× 119 s, 4× 158 s) plus ~15 s to recalibrate and reposition. A 3600 dpi frame with
+the 3× pass takes about 2 min 55 s (SilverFast: 3 min 53 s for the same job); with infrared as
+well, about 3 min 50 s. The resolution menu shows the total and the passes.
 - **Exposure fusion** (artistic): both passes are inverted and merged Mertens-style (contrast,
   saturation and well-exposedness weights, Laplacian-pyramid blend). The TIFF is a gamma-encoded,
   tone-mapped positive, not for converters.
@@ -244,8 +249,11 @@ dark marks. Processing: registration of the IR pass on the defects themselves (t
 1–2.5 lines off), removal of the faint cyan-dye ghost (log IR ≈ 0.06·log R), a transmission map,
 exclusion of the film holder, then a mask. **Repair** fills compact defects by exemplar
 (patch-based) inpainting from nearby film texture, which keeps the grain, and divides large faint
-defects by their IR transmission^γ (γ ≈ 0.6 measured). **Detect only** saves the registered IR
-TIFF (`_ir.tif`) and mask (`_irmask.png`) and leaves the image alone. B&W silver film and
+defects by their IR transmission^γ (γ ≈ 0.6 measured). **Detect only** leaves the colour alone.
+Either way the registered infrared is saved as a **4th channel of the TIFF** (RGBI, 16-bit,
+ExtraSamples = unspecified, as in SilverFast's 64-bit HDRi files), with the defect mask as
+`_irmask.png`. Programs that only read RGB ignore the 4th channel; Photoshop shows it as an extra
+channel. B&W silver film and
 Kodachrome block IR; that is detected and the frame is not repaired.
 
 Detection takes about 20 s per 3600 dpi frame, repair under 1 s. Settings are recorded in the

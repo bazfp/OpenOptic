@@ -21,7 +21,6 @@
     if(settings.tiff!=='aligned')n.push({kind:'raw-tiff',name:b+'_raw.tif'});
     n.push({kind:'sidecar',name:b+'.json'});
     if(settings.jpeg)n.push({kind:'jpeg',name:b+'_preview.jpg'});
-    if(settings.infrared==='detect')n.push({kind:'ir',name:b+'_ir.tif'});
     if(settings.infrared==='detect'||settings.infrared==='repair')n.push({kind:'mask',name:b+'_irmask.png'});
     return n;
   }
@@ -71,7 +70,7 @@
       det=Enhance.irDetect(ir,rgb,W,H,{darkC:darkS}); mask=Enhance.dilate(det.core,W,H,2);
       info.infrared={mode:s.infrared,registration:det.registration,ghost:det.ghost,defectCoverage:det.coverage,irMedian:det.irMedian,irBlocked:det.irBlocked};
       if(det.irBlocked){ info.infrared.note='infrared blocked by the film (B&W silver image or Kodachrome?): no repair'; log('infrared: the film blocks IR (silver image?); not repaired'); }
-      if(s.infrared==='detect'){ const out=new Uint16Array(W*H); for(let i=0;i<W*H;i++) out[i]=Math.min(65535,Math.max(0,Math.round(det.ir[i]))); p.irPlane={data:new Uint8Array(out.buffer),width:W,height:H}; }
+      { const out=new Uint16Array(W*H); for(let i=0;i<W*H;i++) out[i]=Math.min(65535,Math.max(0,Math.round(det.ir[i]))); p.irPlane=out; }   // saved as the TIFF's 4th channel
       log(`infrared: ${det.coverage} % defects, offset ${det.registration.dy.toFixed(2)}/${det.registration.dx.toFixed(2)} px${det.registration.ok?'':' (not registered: '+det.registration.reason+')'}`);
     }
     const repairing=det&&!det.irBlocked&&s.infrared==='repair';
@@ -134,15 +133,18 @@
           const average=settings.pixels!=='full', inPlace=average&&!pending.names.some(n=>n.kind==='raw-tiff');
           let a=pending.aligned||(pending.aligned=CaptureRuntime.alignedFrame(bytes,g,{average,offsets:pending.offsets,inPlace,mirror:settings.mirror!==false,filter:settings.pixels==='lanczos'?'lanczos3':'box'}));
           const note=pending.processing?.multiExposure?` multi-exposure ${pending.processing.multiExposure.mode}${a.displayReferred?' (tone-mapped positive)':''}`:'';
-          const h=CaptureRuntime.tiffHeader(a.width,a.height,a.xdpi,a.ydpi,{orientation:settings.orientation,description:desc+note+(pending.processing?.infrared?.repair?' infrared-repaired':'')});
-          const meta={width:a.width,height:a.height,xDpi:a.xdpi,yDpi:a.ydpi,verticalSamplesAveraged:a.averaged,lineFilter:a.filter};
-          await put(kind,name,[h,a.data],meta);
+          // with infrared, the registered IR plane is the 4th sample of every pixel (RGBI, ExtraSamples
+          // = unspecified), as in SilverFast's 64-bit HDRi files; the RGB data is unchanged
+          const ir=pending.irPlane, ch=ir?4:3;
+          const h=CaptureRuntime.tiffHeader(a.width,a.height,a.xdpi,a.ydpi,{orientation:settings.orientation,channels:ch,description:desc+note+(pending.processing?.infrared?.repair?' infrared-repaired':'')+(ir?' RGBI: 4th channel infrared, registered to the colour image':'')});
+          const meta={width:a.width,height:a.height,xDpi:a.xdpi,yDpi:a.ydpi,channels:ir?'RGBI':'RGB',verticalSamplesAveraged:a.averaged,lineFilter:a.filter};
+          let body=a.data;
+          if(ir){ const rgb=new Uint16Array(a.data.buffer,a.data.byteOffset,a.data.byteLength>>1), n=a.width*a.height, o=new Uint16Array(n*4);
+            for(let i=0,j=0,k=0;i<n;i++,j+=3,k+=4){ o[k]=rgb[j]; o[k+1]=rgb[j+1]; o[k+2]=rgb[j+2]; o[k+3]=ir[i]; } body=new Uint8Array(o.buffer); }
+          await put(kind,name,[h,body],meta);
         }else if(kind==='raw-tiff'){
           const h=CaptureRuntime.tiffHeader(g.pixels,g.lincnt,g.dpi,g.yres,{orientation:1,description:desc+' raw USB samples, channels not aligned'});
           await put(kind,name,[h,bytes],{width:g.pixels,height:g.lincnt,xDpi:g.dpi,yDpi:g.yres});
-        }else if(kind==='ir'&&pending.irPlane){
-          const q=pending.irPlane, h=CaptureRuntime.tiffHeader(q.width,q.height,pending.aligned.xdpi,pending.aligned.ydpi,{orientation:settings.orientation,channels:1,description:desc+' infrared (registered to the colour image)'});
-          await put(kind,name,[h,q.data],{width:q.width,height:q.height});
         }else if(kind==='mask'&&pending.irMask){
           const q=pending.irMask; await put(kind,name,[await Enhance.pngGray(q.data,q.width,q.height)],{width:q.width,height:q.height});
         }else if(kind==='jpeg'){

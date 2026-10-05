@@ -581,19 +581,20 @@
   // Baseline TIFF header for an uncompressed interleaved RGB16 strip that follows it.
   // Orientation: 1 as scanned, 3 rotate 180, 6 rotate 90 CW, 8 rotate 90 CCW (viewer applies it).
   function tiffHeader(w,h,xdpi,ydpi,{orientation=1,description='',software='OpticFilm 7600i roll scanner',channels=3}={}){
-    assert(channels===3||channels===1,'TIFF channels must be 1 or 3');
+    assert([1,3,4].includes(channels),'TIFF channels must be 1, 3 or 4 (RGB + infrared)');
     const dataBytes=w*h*2*channels;
     assert(Number.isSafeInteger(dataBytes)&&w>0&&h>0&&dataBytes<0xffffffff-65536,'Invalid or oversized TIFF dimensions');
     assert([1,3,6,8].includes(orientation),'Unsupported orientation');
     const ascii=s=>{const b=[...s].map(ch=>{const c=ch.charCodeAt(0);return c>=32&&c<127?c:63;});b.push(0);return b;};
     const desc=description?ascii(description):null, soft=ascii(software);
-    const grey=channels===1, E=[[256,4,1,w],[257,4,1,h],grey?[258,3,1,16]:[258,3,3,'bps'],[259,3,1,1],[262,3,1,grey?1:2]];
+    const grey=channels===1, E=[[256,4,1,w],[257,4,1,h],grey?[258,3,1,16]:[258,3,channels,'bps'],[259,3,1,1],[262,3,1,grey?1:2]];
     if(desc)E.push([270,2,desc.length,'desc']);
     E.push([273,4,1,'data'],[274,3,1,orientation],[277,3,1,channels],[278,4,1,h],[279,4,1,dataBytes],
       [282,5,1,'xres'],[283,5,1,'yres'],[284,3,1,1],[296,3,1,2],[305,2,soft.length,'soft']);
+    if(channels===4)E.push([338,3,1,0]);   // ExtraSamples: 0 = unspecified (an infrared plane, not alpha), as in RGBI scanner TIFFs
     const ifd=8, ifdSize=2+E.length*12+4; let off=ifd+ifdSize; const place={};
     const reserve=(key,len)=>{place[key]=off;off+=len+(len&1);};
-    if(!grey)reserve('bps',6);reserve('xres',8);reserve('yres',8);if(desc)reserve('desc',desc.length);reserve('soft',soft.length);
+    if(!grey)reserve('bps',2*channels);reserve('xres',8);reserve('yres',8);if(desc)reserve('desc',desc.length);reserve('soft',soft.length);
     off=(off+15)&~15; const dataOff=off;
     const buf=new ArrayBuffer(dataOff), dv=new DataView(buf), u8=new Uint8Array(buf);
     dv.setUint16(0,0x4949,true);dv.setUint16(2,42,true);dv.setUint32(4,ifd,true);dv.setUint16(ifd,E.length,true);
@@ -606,7 +607,7 @@
       o+=12;
     }
     dv.setUint32(o,0,true);
-    if(!grey)for(let i=0;i<3;i++)dv.setUint16(place.bps+i*2,16,true);
+    if(!grey)for(let i=0;i<channels;i++)dv.setUint16(place.bps+i*2,16,true);
     dv.setUint32(place.xres,Math.round(xdpi),true);dv.setUint32(place.xres+4,1,true);
     dv.setUint32(place.yres,Math.round(ydpi),true);dv.setUint32(place.yres+4,1,true);
     if(desc)u8.set(desc,place.desc); u8.set(soft,place.soft);

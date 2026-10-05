@@ -170,8 +170,8 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
         <select id="tiffKind"><option value="aligned">aligned RGB 16-bit</option><option value="both">aligned + raw USB</option><option value="raw">raw USB only</option></select></div>
       <label class="check"><input type="checkbox" id="saveJpeg"> also save a preview JPEG</label>
       <div class="field"><label for="infrared">Infrared</label>
-        <select id="infrared"><option value="off">off (default)</option><option value="repair">dust &amp; scratch repair</option><option value="detect">detect only (save IR + mask)</option></select></div>
-      <p class="small">Adds an infrared pass (3600 dpi). Dye images are transparent to IR, so dust and scratches show as dark marks. The pass is registered on the defects, the faint cyan-dye ghost is removed, and the mask is built from the IR transmission. <b>Repair</b> fills compact defects by exemplar inpainting from nearby film texture (keeps grain) and corrects large faint ones by their IR transmission; a mask PNG is saved. <b>Detect only</b> saves the registered IR TIFF and mask, leaving the image untouched. Not for B&amp;W silver film or Kodachrome (they block IR; detected and skipped).</p>
+        <select id="infrared"><option value="off">off (default)</option><option value="repair">dust &amp; scratch repair</option><option value="detect">detect only (IR channel + mask)</option></select></div>
+      <p class="small">Adds an infrared pass (3600 dpi). The registered infrared is always saved as a 4th channel of the TIFF (RGBI, 16-bit, like SilverFast's 64-bit HDRi), and a defect mask PNG alongside. Dye images are transparent to IR, so dust and scratches show as dark marks. The pass is registered on the defects, the faint cyan-dye ghost is removed, and the mask is built from the IR transmission. <b>Repair</b> fills compact defects by exemplar inpainting from nearby film texture (keeps grain) and corrects large faint ones by their IR transmission; a mask PNG is saved. <b>Detect only</b> leaves the colour untouched, for repair in another program. Not for B&amp;W silver film or Kodachrome (they block IR; detected and skipped).</p>
       <div class="field"><label for="lampCheck">Illumination check</label>
         <select id="lampCheck"><option value="warn">warn (recommended)</option><option value="wait">wait and retry</option><option value="off">off</option></select></div>
       <label class="check"><input type="checkbox" id="blackLevel"> correct black level (recommended)</label>
@@ -188,7 +188,7 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
         <select id="multiExposure"><option value="off">off (one pass, default)</option><option value="range">extended range (linear, for converters)</option><option value="fusion">exposure fusion (tone-mapped positive)</option></select></div>
       <div class="field"><label for="meFactor">Long pass</label>
         <select id="meFactor"><option value="2">2× exposure</option><option value="3">3× exposure (as SilverFast)</option><option value="4">4× exposure</option></select></div>
-      <p class="small" id="meNote">Multi-exposure scans the frame twice: normally, then with a longer exposure (line period ×k, motor slowed to match; calibration stays at 1×). <b>Extended range</b> registers the passes, fits long = slope·short + offset per channel and blends them by their noise: shadows (dense negative areas) get the long pass's lower noise, highlights the 1× pass, and the TIFF stays linear 16-bit at the 1× scale for negative converters. <b>Exposure fusion</b> merges the passes Mertens-style (contrast, saturation, well-exposedness, Laplacian pyramids) into an inverted, tone-mapped positive for an artistic look; that TIFF is gamma-encoded, not for converters. 3600 dpi only; about twice the scan time.</p>
+      <p class="small" id="meNote">Multi-exposure scans the frame twice: normally, then with a longer exposure (line period ×k, motor slowed to match; calibration stays at 1×). <b>Extended range</b> registers the passes, fits long = slope·short + offset per channel and blends them by their noise: shadows (dense negative areas) get the long pass's lower noise, highlights the 1× pass, and the TIFF stays linear 16-bit at the 1× scale for negative converters. <b>Exposure fusion</b> merges the passes Mertens-style (contrast, saturation, well-exposedness, Laplacian pyramids) into an inverted, tone-mapped positive for an artistic look; that TIFF is gamma-encoded, not for converters. 3600 dpi only. The long pass's line time is its exposure, so a k× pass takes k times a 40 s pass: 2× adds about 1 min 35 s, 3× about 2 min 15 s (shown beside each choice). Dummy lines are already dropped in every pass. In theory 2× cuts shadow noise to about 45–58 % of one pass and 3× to 32–50 % (less where the film's own grain dominates), so 2× is the quicker compromise.</p>
       <div class="field"><label for="warm">LED warm-up</label><div class="inline"><input type="number" id="warm" min="0" max="120" step="1" style="width:70px"><span class="small">seconds (default 1)</span></div></div>
       <p class="small">Warm-up applies only when the LED has been off.</p>
       <label class="check"><input type="checkbox" id="keepLamp"> keep the LED on between frames (off after 15 min idle)</label>
@@ -635,18 +635,24 @@ function fromUI(){ for(const [id,k,t] of bind){ settings[k]=t==='check'?$(id).ch
 function refreshName(){
   let t; try{ t=Roll.fileNames(settings,settings.next).map(f=>f.name).join('  '); }catch(e){ t='—'; }
   $('nextName').textContent=t; $('scanLabel').textContent=!(connected||dry)?'Connect scanner':rescan!==null?`Rescan ${tifName(rescan)} (overwrite)`:`Scan & Save ${tifName(settings.next)}`;
-  $('profileSel').title=DPI_INFO[settings.profile]||'';
-  for(const o of $('profileSel').options){ const s=scanSecs(o.value); o.textContent=`${DPI_LABEL[o.value]} · ${DPI_MB[o.value]} · ~${fmtSecs(s)}`; }
+  for(const o of $('profileSel').options){ const ps=scanPasses(o.value), s=scanSecs(o.value);
+    o.textContent=`${DPI_LABEL[o.value]} · ${DPI_MB[o.value]} · ~${fmtSecs(s)}${ps.length>1?` (${ps.length} passes)`:''}`;
+    o.title=ps.map(([n,t])=>`${n} ~${fmtSecs(t)}`).join(' + '); }
+  $('profileSel').title=($('profileSel').selectedOptions[0]?.title||'')+'\n'+(DPI_INFO[settings.profile]||'');
+  const base=passSecs('full',{dummyLines:settings.dummyLines});
+  for(const o of $('meFactor').options){ const k=Number(o.value); o.textContent=`${k}× exposure${k===3?' (as SilverFast)':''} · +${fmtSecs(passSecs('full',{dummyLines:settings.dummyLines,exposureMultiplier:k})+15)}`; }
 }
 const DPI_LABEL={prescan:'1440 dpi',full:'3600 dpi',full7200:'7200 dpi'}, DPI_MB={prescan:'~16 MB',full:'~103 MB',full7200:'~411 MB'};
 const fmtSecs=s=>s>=100?`${Math.floor(s/60)} min${s%60>=15?' '+Math.round(s%60)+' s':''}`:`${Math.round(s)} s`;
 // main-pass time; calibration and positioning add a few seconds
 const passSecs=(key,o)=>{ try{ return CaptureRuntime.prepareProfile(CAPTURE_PROFILES[key],o).scan.seconds; }catch(e){ return CAPTURE_PROFILES[key].scan.seconds; } };
 const extraPasses=key=>key==='full'?{me:settings.multiExposure!=='off',ir:settings.infrared!=='off'}:{me:false,ir:false};
-const scanSecs=key=>{ const x=extraPasses(key); let t=passSecs(key,{dummyLines:settings.dummyLines});
-  if(x.ir) t+=passSecs('full-ir',{dummyLines:settings.dummyLines})+15;
-  if(x.me) t+=passSecs(key,{dummyLines:settings.dummyLines,exposureMultiplier:Number(settings.meFactor)})+15;
-  return t; };
+// per pass: main-scan time; each extra pass adds ~15 s of return, recalibration and positioning
+const scanPasses=key=>{ const x=extraPasses(key), d={dummyLines:settings.dummyLines}, k=Number(settings.meFactor)||3, list=[['colour',passSecs(key,d)]];
+  if(x.ir) list.push(['infrared',passSecs('full-ir',d)+15]);
+  if(x.me) list.push([`${k}× exposure`,passSecs(key,{...d,exposureMultiplier:k})+15]);
+  return list; };
+const scanSecs=key=>scanPasses(key).reduce((a,[,t])=>a+t,0);
 const DPI_INFO={prescan:'Quick index scan: 1440 dpi, ~16 MB, ~16 s',full:'Full resolution: 3600 dpi, ~103 MB, ~80 s',full7200:'Maximum: 7200 dpi, ~411 MB, ~4 min, needs ~1.4 GB free memory'};
 const tifName=n=>{ try{ return (Roll.fileNames(settings,n).find(f=>f.kind==='tiff'||f.kind==='raw-tiff')||{name:safeBase(n)}).name; }catch(e){ return '—'; } };
 const safeBase=n=>{ try{ return Roll.baseName(settings.prefix,n,settings.digits); }catch(e){ return '—'; } };
