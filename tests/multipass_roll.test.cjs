@@ -27,7 +27,12 @@ const lamp={dark:{mean:dk,noise:{mean:dk,tvar:[2400,2400,2400]}},shading:{mean:[
     const names=[...saved.keys()].sort();
     const side=JSON.parse(saved.get('mp_01.json'));
     assert(names.includes('mp_01.tif')&&names.includes('mp_01_irmask.png'),'files: '+names);
-    assert.equal(names.includes('mp_01_ir.tif'),mode==='fusion','IR TIFF only in detect mode');
+    assert(!names.includes('mp_01_ir.tif'),'IR is a channel of the TIFF, not a separate file');
+    { const t=saved.get('mp_01.tif'), dv=new DataView(t.buffer,t.byteOffset,t.byteLength), ifd=dv.getUint32(4,true), n=dv.getUint16(ifd,true), tags={};
+      for(let i=0;i<n;i++){ const o=ifd+2+i*12; tags[dv.getUint16(o,true)]={count:dv.getUint32(o+4,true),v:dv.getUint16(o+8,true),off:dv.getUint32(o+8,true)}; }
+      assert.equal(tags[277].v,4,'4 samples per pixel'); assert.equal(tags[258].count,4); assert.equal(tags[338].v,0,'ExtraSamples unspecified (not alpha)');
+      const W=dv.getUint32(ifd+2+8,true), Hh=tags[257].off; assert.equal(tags[279].off,W*Hh*8,'strip holds RGBI16');
+      const d=tags[273].off; let irSum=0; for(let i=0;i<1000;i++) irSum+=dv.getUint16(d+(i*4+3)*2,true); assert(irSum/1000>40000,'IR channel holds the infrared ('+irSum/1000+')'); }
     const me=side.processing.multiExposure, ir=side.processing.infrared;
     assert.equal(me.mode,mode); assert(me.fits.every(f=>Math.abs(f.slope-3.1)<0.15),'fits '+JSON.stringify(me.fits));
     assert(ir.registration.ok&&Math.abs(ir.registration.dy+1)<0.5,'IR content 2 raw lines low is moved up one output row: '+JSON.stringify(ir.registration));

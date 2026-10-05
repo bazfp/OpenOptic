@@ -19,7 +19,7 @@ import (
 )
 
 // File names: letters, digits, space . _ - + ( ), a known extension, nothing path-like.
-var safeName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._\-+() ]{0,150}\.(tif|tiff|json|jpg)$`)
+var safeName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._\-+() ]{0,150}\.(tif|tiff|json|jpg|png)$`)
 
 const maxSaveBytes = 2 << 30 // 2 GiB, well above a full raw frame (217 MB)
 

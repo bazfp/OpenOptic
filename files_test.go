@@ -141,3 +141,16 @@ func TestSavedFilesKeepOwnershipHelper(t *testing.T) {
 		t.Fatal("invokingUser must report false when not root")
 	}
 }
+
+func TestCheckNameAllowsMaskPNG(t *testing.T) {
+	for _, n := range []string{"test15_irmask.png", "Roll001_01.tif", "Roll001_01_preview.jpg"} {
+		if err := checkName(n); err != nil {
+			t.Errorf("%s: %v", n, err)
+		}
+	}
+	for _, n := range []string{"../x.png", "x.exe", ".png"} {
+		if checkName(n) == nil {
+			t.Errorf("%s accepted", n)
+		}
+	}
+}
