@@ -4,6 +4,14 @@
    it: DESIGN_MULTIEXPOSURE_AND_IR.md and CAPTURE_FINDINGS_COLOUR_ME_IR.md. */
 (() => {
   const assert=(ok,msg)=>{ if(!ok) throw new Error(msg); };
+  // The slow steps are generators that yield their progress (0..1) between stages. runSync drives
+  // them in one go (tests, tools); runAsync hands the browser a frame between stages so the page
+  // can draw a progress bar instead of freezing for 20 s.
+  function runSync(g){ let r; while(!(r=g.next()).done); return r.value; }
+  async function runAsync(g,onProgress){ let r, last=0;
+    while(!(r=g.next()).done){ if(onProgress) onProgress(r.value);
+      const now=Date.now(); if(now-last>40){ last=now; await new Promise(res=>setTimeout(res,0)); } }
+    if(onProgress) onProgress(1); return r.value; }
   const FS=65535;
 
   // ------------------------------------------------------------ plane helpers
@@ -181,13 +189,15 @@
     return out;
   }
   function gaussPyr(img,w,h,levels){ const p=[{d:img,w,h}]; for(let l=1;l<levels;l++){ const q=p[l-1]; p.push(reduce(q.d,q.w,q.h)); } return p; }
-  function fuse(short,long,W,H,{darkS,darkL,fit,film,shift={dy:0,dx:0},sigma=0.2}){
+  function fuse(...a){ return runSync(fuseSteps(...a)); }
+  function* fuseSteps(short,long,W,H,{darkS,darkL,fit,film,shift={dy:0,dx:0},sigma=0.2}){
     // True image black (the dark frame is read before hardware shading, so it overestimates it):
     // with both passes sharing black B, long - darkL = k(short - darkS) + offset gives
     // B = darkS - offset/(k - 1) (Kodak Gold capture: ~560/461/414 against dark frames ~1000-1400).
     const black=[0,1,2].map(c=>Math.max(0,Math.min(darkS[c],darkS[c]-fit[c].offset/Math.max(0.2,fit[c].slope-1))));
     const s=[0,1,2].map(c=>plane(short,W,H,c,black[c]));
     const l=[0,1,2].map(c=>{ const p=shifted(plane(long,W,H,c),W,H,shift.dy,shift.dx); for(let i=0;i<p.length;i++) p[i]=Math.max(1,p[i]-black[c]-(darkL[c]-darkS[c])); return p; });
+    yield 0.08;
     const {lohi,neg}=renderParams(s,W,H,film);
     // display renderings, in place (s and l become the two exposures, values 0..1)
     for(let c=0;c<3;c++){ const [lo,hi]=lohi[c]; for(let i=0;i<W*H;i++){ s[c][i]=toDisplay(s[c][i],lo,hi,neg); l[c][i]=toDisplay(l[c][i],lo,hi,neg); } }
@@ -200,13 +210,17 @@
         let ex=1; for(let c=0;c<3;c++) ex*=Math.exp(-((e[c][i]-0.5)**2)/(2*sigma*sigma));
         w[i]=(lap+1e-3)*(sat+1e-3)*(ex+1e-6); }
       return w; };
-    const w1=weight(s), w2=weight(l);
+    yield 0.15;
+    const w1=weight(s); yield 0.25;
+    const w2=weight(l); yield 0.35;
     for(let i=0;i<W*H;i++){ const t=w1[i]+w2[i]; w1[i]=w1[i]/t; }
     const levels=Math.max(1,Math.floor(Math.log2(Math.min(W,H)))-3), gw=gaussPyr(w1,W,H,levels);
     let mean1=0; for(let i=0;i<W*H;i++) mean1+=w1[i]; mean1/=W*H;
     const out=short;
     for(let c=0;c<3;c++){
+      yield 0.4+c*0.2;
       const g1=gaussPyr(s[c],W,H,levels), g2=gaussPyr(l[c],W,H,levels); s[c]=null; l[c]=null;
+      yield 0.47+c*0.2;
       // blended Laplacian pyramid, collapsed from the top
       let acc=null;
       for(let lv=levels-1;lv>=0;lv--){
@@ -228,24 +242,34 @@
   // colour: aligned RGB16 with black level darkC. Steps: register on dust, remove the cyan-dye
   // ghost (log IR = a·log R + b, fitted per scan, so any C-41 stock works), transmission
   // t = IR'/local clean background, defects where t < threshold.
-  function irDetect(ir,colour,W,H,{darkC=[0,0,0],threshold=0.9,size=15}={}){
+  function irDetect(...a){ return runSync(irDetectSteps(...a)); }
+  function* irDetectSteps(ir,colour,W,H,{darkC=[0,0,0],threshold=0.9,size=15}={}){
     const R=plane(colour,W,H,0,darkC[0]);
     const I0=new Float32Array(W*H); for(let i=0;i<I0.length;i++) I0[i]=ir[i];
+    yield 0.02;
     const reg=registerDust(I0,R,W,H);
+    yield 0.3;
     const I=shifted(I0,W,H,reg.ok?reg.dy:0,reg.ok?reg.dx:0);
+    yield 0.35;
     // ghost fit on clean pixels
     const bg0=closing(I,W,H,size); let n=0,sx=0,sy=0,sxx=0,sxy=0;
+    yield 0.5;
     for(let y=Math.floor(H*0.05);y<H*0.95;y+=4) for(let x=Math.floor(W*0.05);x<W*0.95;x+=4){ const i=y*W+x;
       if(I[i]>0.95*bg0[i]&&R[i]>16&&I[i]>16){ const a=Math.log(R[i]), b=Math.log(I[i]); n++; sx+=a; sy+=b; sxx+=a*a; sxy+=a*b; } }
     const ghost=n>100?(n*sxy-sx*sy)/(n*sxx-sx*sx):0;
     const In=new Float32Array(W*H); for(let i=0;i<In.length;i++) In[i]=I[i]*Math.pow(Math.max(16,R[i]),-ghost);
     let irMedian=[]; for(let i=0;i<I.length;i+=97) irMedian.push(I[i]); irMedian.sort((a,b)=>a-b); irMedian=irMedian[irMedian.length>>1]||0;
+    yield 0.55;
     const bg=boxBlur(closing(In,W,H,size),W,H,7), t=new Float32Array(W*H);
+    yield 0.7;
     // Outside the film (the holder around the frame) IR is near zero; its edge would read as a
     // huge defect. Exclude it, widened by the background filter's reach.
     // Only large dark areas count (an opening with a 31 px window drops opaque specks and scratches).
     const dark=new Float32Array(W*H); for(let i=0;i<W*H;i++) dark[i]=I[i]<0.5*irMedian?1:0;
-    const big=morph(morph(dark,W,H,31,false),W,H,31,true), excluded=morph(big,W,H,2*(size+9)+1,true), m=size+9;
+    const op=morph(dark,W,H,31,false); yield 0.78;
+    const big=morph(op,W,H,31,true); yield 0.86;
+    const excluded=morph(big,W,H,2*(size+9)+1,true), m=size+9;
+    yield 0.95;
     for(let y=0;y<H;y++) for(let x=0;x<W;x++) if(y<m||x<m||y>=H-m||x>=W-m) excluded[y*W+x]=1;   // and the image border
     const core=new Uint8Array(W*H); let defects=0, film=0;
     for(let i=0;i<t.length;i++){ t[i]=In[i]/Math.max(1,bg[i]); if(excluded[i]) continue; film++; if(t[i]<threshold){ core[i]=1; defects++; } }
@@ -293,7 +317,8 @@
         if(n<12) continue; est[c].push(Math.log(Math.max(1,colour[i*3+c])/(s/n))/Math.log(tt)); } }
     return est.map(a=>{ if(a.length<30) return 0.62; a.sort((p,q)=>p-q); return +Math.min(1,Math.max(0.3,a[a.length>>1])).toFixed(3); });
   }
-  function irRepair(colour,W,H,det,{maxFillArea=4000,grow=2,radius=36,candidates=48,maxExemplar=600000,seed=1}={}){
+  function irRepair(...a){ return runSync(irRepairSteps(...a)); }
+  function* irRepairSteps(colour,W,H,det,{maxFillArea=4000,grow=2,radius=36,candidates=48,maxExemplar=600000,seed=1}={}){
     const {t,core}=det, mask=dilate(core,W,H,grow);
     const gamma=attenuationExponent(colour,W,H,t,core,mask);
     const {label,sizes}=components(mask,W,H), hole=new Uint8Array(W*H);
@@ -304,10 +329,12 @@
       if(core[i]){ attenuated++; const tt=Math.max(0.25,t[i]);
         for(let c=0;c<3;c++){ const j=i*3+c, v=colour[j]/Math.pow(tt,gamma[c]); colour[j]=v>FS?FS:Math.round(v); } } }
     let holes=0; for(let i=0;i<W*H;i++) holes+=hole[i];
-    const filled=inpaint(colour,W,H,hole,{radius,candidates,maxExemplar,seed});
+    yield 0.2;
+    const filled=yield* inpaintSteps(colour,W,H,hole,{radius,candidates,maxExemplar,seed},0.2,0.8);
     return {attenuated,inpainted:holes,gamma,filledComponents,dividedComponents,method:filled.method,exemplar:filled.exemplar,diffused:filled.diffused,mask};
   }
-  function inpaint(colour,W,H,hole,{radius=36,candidates=48,maxExemplar=400000,seed=1}={}){
+  function inpaint(...a){ return runSync(inpaintSteps(...a)); }
+  function* inpaintSteps(colour,W,H,hole,{radius=36,candidates=48,maxExemplar=400000,seed=1}={},p0=0,span=1){
     let rnd=seed>>>0||1; const rand=()=>((rnd=(rnd*1664525+1013904223)>>>0)/4294967296);
     const known=new Uint8Array(W*H), srcY=new Int32Array(W*H).fill(-1), srcX=new Int32Array(W*H).fill(-1);
     const LOG=new Float32Array(65536); for(let v=0;v<65536;v++) LOG[v]=Math.log(v+64);
@@ -345,6 +372,7 @@
         const q=by*W+bx; for(let c=0;c<3;c++) colour[i*3+c]=colour[q*3+c];
         known[i]=1; srcY[i]=by; srcX[i]=bx; exemplar++; filled.push(i);
       }
+      yield p0+span*Math.min(1,(exemplar+diffused)/Math.max(1,total));
       if(!filled.length) break;   // nothing reachable (cannot happen unless the whole frame is hole)
       const next=[];
       const add=j=>{ if(!known[j]&&stamp[j]!==round){ stamp[j]=round; next.push(j); } };
@@ -368,6 +396,14 @@
     const ihdr=new Uint8Array(13), dv=new DataView(ihdr.buffer); dv.setUint32(0,W); dv.setUint32(4,H); ihdr[8]=8; ihdr[9]=0;
     return new Blob([Uint8Array.of(137,80,78,71,13,10,26,10),chunk('IHDR',ihdr),chunk('IDAT',z),chunk('IEND',new Uint8Array(0))],{type:'image/png'});
   }
+  // Defect/repair mask at preview size (same grid as previewFromAligned): a preview pixel is set
+  // if any frame pixel under it is, so hairline scratches stay visible.
+  function maskPreview(mask,W,H,maxDim=1200){
+    const scale=Math.min(1,maxDim/Math.max(W,H)), w=Math.max(1,Math.round(W*scale)), h=Math.max(1,Math.round(H*scale)), bx=W/w, by=H/h, out=new Uint8Array(w*h);
+    let n=0;
+    for(let y=0;y<H;y++){ const oy=Math.min(h-1,Math.floor(y/by)); for(let x=0;x<W;x++) if(mask[y*W+x]){ const o=oy*w+Math.min(w-1,Math.floor(x/bx)); if(!out[o]){ out[o]=255; n++; } } }
+    return {data:out,width:w,height:h,pixels:n};
+  }
   // Small display planes from an aligned frame (for previews of processed output).
   function previewFromAligned(rgb,W,H,maxDim=1200,minus=[0,0,0]){
     const scale=Math.min(1,maxDim/Math.max(W,H)), w=Math.max(1,Math.round(W*scale)), h=Math.max(1,Math.round(H*scale));
@@ -381,5 +417,5 @@
     return {planes,g:{pixels:w,lines:h}};
   }
 
-  globalThis.Enhance={fitPasses,shiftRGB,components,attenuationExponent,boxBlur,morph,closing,shifted,registerSame,registerDust,fitAffine,mergeRange,fuse,irDetect,irRepair,inpaint,dilate,pngGray,previewFromAligned};
+  globalThis.Enhance={runSync,runAsync,irDetectSteps,irRepairSteps,fuseSteps,inpaintSteps,maskPreview,fitPasses,shiftRGB,components,attenuationExponent,boxBlur,morph,closing,shifted,registerSame,registerDust,fitAffine,mergeRange,fuse,irDetect,irRepair,inpaint,dilate,pngGray,previewFromAligned};
 })();

@@ -15,14 +15,15 @@
     assert(Number.isInteger(number)&&number>=0&&number<=999999,'Frame number must be 0–999999');
     return cleanPrefix(prefix)+String(number).padStart(digits||2,'0');
   }
-  const PREVIEW_MAX=2400;   // on-screen preview of a saved frame (long side, px)
+  const PREVIEW_MAX=2400;
+  async function pngDataURL(px,w,h){ const b=new Uint8Array(await (await Enhance.pngGray(px,w,h)).arrayBuffer()); let s='';
+    for(let i=0;i<b.length;i+=0x8000) s+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000)); return 'data:image/png;base64,'+btoa(s); }   // on-screen preview of a saved frame (long side, px)
   function fileNames(settings,number){
     const b=baseName(settings.prefix,number,settings.digits), n=[];
     if(settings.tiff!=='raw')n.push({kind:'tiff',name:b+'.tif'});
     if(settings.tiff!=='aligned')n.push({kind:'raw-tiff',name:b+'_raw.tif'});
     n.push({kind:'sidecar',name:b+'.json'});
     if(settings.jpeg)n.push({kind:'jpeg',name:b+'_preview.jpg'});
-    if(settings.infrared==='detect'||settings.infrared==='repair')n.push({kind:'mask',name:b+'_irmask.png'});
     return n;
   }
   function manifestName(settings){return (cleanPrefix(settings.prefix).replace(/[_\-. ]+$/,'')||'roll')+'_roll.json';}
@@ -42,7 +43,7 @@
       settings:{...settings},started:started.toISOString(),bytes,profile,g,align,lamp:lamp||null,positioning:positioning||null,offsets,preview:null,trace:trace||null,saved:[]};
     let pv;
     if(acq.long||acq.ir){
-      await processPasses(pending,acq,ctx.log||(()=>{}));
+      await processPasses(pending,acq,ctx.log||(()=>{}),ctx.progress);
       const P=pending.aligned, rgb=new Uint16Array(P.data.buffer,P.data.byteOffset,P.data.byteLength>>1);
       pv=Enhance.previewFromAligned(rgb,P.width,P.height,PREVIEW_MAX);
     }else pv=CaptureRuntime.previewPlanes(bytes,g,PREVIEW_MAX,offsets,settings.mirror!==false);
@@ -54,7 +55,7 @@
   // Extra passes (multi-exposure long pass, infrared pass): align every pass on the colour pass's
   // grid, then merge or fuse the exposures and detect/repair defects with the IR plane. The result
   // becomes pending.aligned (what the TIFF writer saves); the raw colour bytes stay for a raw TIFF.
-  async function processPasses(p,acq,log){
+  async function processPasses(p,acq,log,report){
     const s=p.settings, average=s.pixels!=='full', filter=s.pixels==='lanczos'?'lanczos3':'box', mirror=s.mirror!==false;
     const keepRaw=p.names.some(n=>n.kind==='raw-tiff');
     const alignPass=(bytes,profile,inPlace)=>CaptureRuntime.alignedFrame(bytes,CaptureRuntime.geometry(profile,p.align.shifts),{average,inPlace,mirror,filter});
@@ -62,25 +63,37 @@
     const rgb=new Uint16Array(a.data.buffer,a.data.byteOffset,a.data.byteLength>>1);
     const darkS=p.lamp?.dark?.mean||[1000,1000,1000];
     const info={}, t0=Date.now();
+    // progress across the steps this frame needs, weighted by their typical time
+    const repairingPlanned=acq.ir&&s.infrared==='repair', fusing=acq.long&&s.multiExposure==='fusion';
+    const plan=[acq.ir&&['ir-align','Aligning the infrared pass',1],acq.ir&&['detect','Finding dust and scratches',8],acq.long&&['long-align','Aligning the long exposure',1],
+      acq.long&&!fusing&&['merge','Merging the exposures',1],repairingPlanned&&['repair','Repairing dust and scratches',fusing?4:2],fusing&&['fuse','Fusing the exposures',8]].filter(Boolean);   // in the order they run
+    const total=plan.reduce((a,x)=>a+x[2],0);
+    const stage=key=>{ const i=plan.findIndex(x=>x[0]===key), before=plan.slice(0,i).reduce((a,x)=>a+x[2],0), [,label,w]=plan[i];
+      return f=>{ if(report) report(label,(before+w*Math.min(1,Math.max(0,f)))/total); }; };
+    const tick=async(key)=>{ stage(key)(0); await new Promise(r=>setTimeout(r,0)); };
     // 1. infrared: detect on the linear colour pass (defects are dark there; registration needs it)
     let det=null, mask=null;
     if(acq.ir){
+      await tick('ir-align');
       const I=alignPass(acq.ir.bytes,acq.ir.profile,average); acq.ir.bytes=null;
       const irgb=new Uint16Array(I.data.buffer,I.data.byteOffset,I.data.byteLength>>1), ir=new Uint16Array(W*H);
       for(let i=0;i<W*H;i++) ir[i]=irgb[i*3];          // IR is read by the red row
-      det=Enhance.irDetect(ir,rgb,W,H,{darkC:darkS}); mask=Enhance.dilate(det.core,W,H,2);
+      det=await Enhance.runAsync(Enhance.irDetectSteps(ir,rgb,W,H,{darkC:darkS}),stage('detect')); mask=Enhance.dilate(det.core,W,H,2);
       info.infrared={mode:s.infrared,registration:det.registration,ghost:det.ghost,defectCoverage:det.coverage,irMedian:det.irMedian,irBlocked:det.irBlocked};
       if(det.irBlocked){ info.infrared.note='infrared blocked by the film (B&W silver image or Kodachrome?): no repair'; log('infrared: the film blocks IR (silver image?); not repaired'); }
       { const out=new Uint16Array(W*H); for(let i=0;i<W*H;i++) out[i]=Math.min(65535,Math.max(0,Math.round(det.ir[i]))); p.irPlane=out; }   // saved as the TIFF's 4th channel
       log(`infrared: ${det.coverage} % defects, offset ${det.registration.dy.toFixed(2)}/${det.registration.dx.toFixed(2)} px${det.registration.ok?'':' (not registered: '+det.registration.reason+')'}`);
     }
     const repairing=det&&!det.irBlocked&&s.infrared==='repair';
-    const repair=(img,label)=>{ const r=Enhance.irRepair(img,W,H,det); mask=r.mask;
+    let repairs=0; const nRepairs=fusing?2:1;
+    const repair=async(img,label)=>{ const on=stage('repair'), k=repairs++;
+      const r=await Enhance.runAsync(Enhance.irRepairSteps(img,W,H,det),f=>on((k+f)/nRepairs)); mask=r.mask;
       info.infrared.repair={inpaintedPixels:r.inpainted,filledDefects:r.filledComponents,dividedDefects:r.dividedComponents,attenuationExponent:r.gamma,method:r.method,
         note:'compact defects filled by exemplar inpainting (patch-based, keeps grain); large faint ones divided by IR transmission^γ'};
       log(`infrared repair${label}: ${r.filledComponents} defects filled (${r.inpainted} px), ${r.dividedComponents} large ones corrected`); };
     // 2. multi-exposure
     if(acq.long){
+      await tick('long-align');
       const L=alignPass(acq.long.bytes,acq.long.profile,average); acq.long.bytes=null;
       let lrgb=new Uint16Array(L.data.buffer,L.data.byteOffset,L.data.byteLength>>1);
       const green=x=>{ const g=new Float32Array(W*H); for(let i=0;i<W*H;i++) g[i]=x[i*3+1]; return g; };
@@ -92,19 +105,24 @@
       info.multiExposure={mode:s.multiExposure,factor:acq.long.factor,registration:shift,noiseModel:noise};
       if(s.multiExposure==='fusion'){
         const fits=Enhance.fitPasses(rgb,lrgb,W,H,{darkS,darkL,shift});
-        if(repairing){ lrgb=Enhance.shiftRGB(lrgb,W,H,shift.dy,shift.dx); repair(rgb,' (1× pass)'); repair(lrgb,' (long pass)'); }
-        const f=Enhance.fuse(rgb,lrgb,W,H,{darkS,darkL,fit:fits,film:s.film,shift:repairing?{dy:0,dx:0}:shift});
+        if(repairing){ lrgb=Enhance.shiftRGB(lrgb,W,H,shift.dy,shift.dx); await repair(rgb,' (1× pass)'); await repair(lrgb,' (long pass)'); }
+        const f=await Enhance.runAsync(Enhance.fuseSteps(rgb,lrgb,W,H,{darkS,darkL,fit:fits,film:s.film,shift:repairing?{dy:0,dx:0}:shift}),stage('fuse'));
         Object.assign(info.multiExposure,{fits,fusion:{method:'Mertens exposure fusion (contrast, saturation, well-exposedness; Laplacian pyramid blend)',
           shortPassWeight:f.shortWeight,black:f.black,output:'display-referred positive (gamma-encoded), not for negative converters'}});
       }else{
+        await tick('merge');
         const r=Enhance.mergeRange(rgb,lrgb,W,H,{darkS,darkL,noise,shift});
         Object.assign(info.multiExposure,{fits:r.fits,longPassWeight:r.longWeight,
           method:'per-channel affine fit long = slope·short + offset, inverse-variance blend, long pass faded out at 90–98 % of full scale'});
-        if(repairing) repair(rgb,'');
+        if(repairing) await repair(rgb,'');
       }
       log(`multi-exposure (${s.multiExposure}): long pass offset ${shift.dy.toFixed(2)}/${shift.dx.toFixed(2)} px, slopes ${info.multiExposure.fits.map(f=>f.slope).join('/')}`);
-    }else if(repairing) repair(rgb,'');
-    if(mask) p.irMask={data:Uint8Array.from(mask,v=>v?255:0),width:W,height:H};
+    }else if(repairing) await repair(rgb,'');
+    // preview-size mask of what was repaired (or, detect only, found) for the on-screen overlay;
+    // kept in the sidecar, so frames loaded back from the folder have it too
+    if(mask&&info.infrared&&!det.irBlocked){ const m=Enhance.maskPreview(mask,W,H,PREVIEW_MAX);
+      p.repairMask={width:m.width,height:m.height,png:await pngDataURL(m.data,m.width,m.height),mode:repairing?'repair':'detect',pixels:m.pixels}; }
+    if(report) report('Finishing',1);
     log(`extra passes processed in ${((Date.now()-t0)/1000).toFixed(1)} s`);
     // black-level correction as in the normal path (linear output only)
     if(p.offsets&&!info.multiExposure?.fusion) for(let i=0;i<rgb.length;i++){ const v=rgb[i]-p.offsets[i%3]; rgb[i]=v<0?0:v>65535?65535:Math.round(v); }
@@ -146,8 +164,6 @@
         }else if(kind==='raw-tiff'){
           const h=CaptureRuntime.tiffHeader(g.pixels,g.lincnt,g.dpi,g.yres,{orientation:1,description:desc+' raw USB samples, channels not aligned'});
           await put(kind,name,[h,bytes],{width:g.pixels,height:g.lincnt,xDpi:g.dpi,yDpi:g.yres});
-        }else if(kind==='mask'&&pending.irMask){
-          const q=pending.irMask; await put(kind,name,[await Enhance.pngGray(q.data,q.width,q.height)],{width:q.width,height:q.height});
         }else if(kind==='jpeg'){
           const blob=await ctx.previewJpeg(pending.preview);
           if(blob)await put(kind,name,[blob]);
@@ -175,7 +191,7 @@
           averagingReducesPixels:false,calibration:'recorded vendor AFE and shading'},
         illuminationCheck:p.lamp?{...p.lamp,reference:profile.lamp,limits:CaptureRuntime.LAMP_LIMITS}:null,
         hardwareShading:'recorded vendor shading tables applied by the scanner before USB transfer'},
-      processing:{multiExposure:p.processing?.multiExposure||null,infrared:p.processing?.infrared||null,channelShiftLines:align.shifts,channelShiftSource:align.used,channelShiftConfidence:align.confidence,
+      processing:{multiExposure:p.processing?.multiExposure||null,infrared:p.processing?.infrared?{...p.processing.infrared,overlay:p.repairMask?{...p.repairMask,note:`${p.repairMask.mode==='repair'?'repaired':'detected'} defects at preview size (orientation as stored, before the TIFF orientation tag); 8-bit PNG, 255 = defect`}:null}:null,channelShiftLines:align.shifts,channelShiftSource:align.used,channelShiftConfidence:align.confidence,
         recordedChannelShifts:profile.shifts,interpolation:settings.pixels==='lanczos'?'Lanczos-3 kernel (alignment and line reduction in one resample)':'linear between bracketing lines',
         columnStagger:{rawLineOffsets:g.stagger||[],
           order:'native even/odd columns, before orientation',
@@ -192,15 +208,15 @@
   function release(p){
     const rec={number:p.number,base:p.base,scanned:p.started,film:p.settings.film,profile:p.profile.name,
       orientation:p.settings.orientation,mirror:p.settings.mirror!==false,files:p.saved.map(({kind,name,bytes,sha256,width,height})=>({kind,name,bytes,sha256,width,height})),
-      shifts:p.align.shifts,shiftConfidence:p.align.confidence,lampWarning:p.lamp?.warning||null,enhanced:[p.processing?.multiExposure?'ME':null,p.processing?.infrared?'IR':null].filter(Boolean),thumb:p.preview?.thumb||null,large:p.preview?.large||null,status:'saved'};
-    p.bytes=null;p.g=null;p.preview=null;p.trace=null;p.aligned=null;p.irPlane=null;p.irMask=null;
+      shifts:p.align.shifts,shiftConfidence:p.align.confidence,lampWarning:p.lamp?.warning||null,enhanced:[p.processing?.multiExposure?'ME':null,p.processing?.infrared?'IR':null].filter(Boolean),displayReferred:!!p.processing?.multiExposure?.fusion,repairMask:p.repairMask||null,thumb:p.preview?.thumb||null,large:p.preview?.large||null,status:'saved'};
+    p.bytes=null;p.g=null;p.preview=null;p.trace=null;p.aligned=null;p.irPlane=null;
     return rec;
   }
 
   function manifest(settings,records){
     return {format:VERSION,roll:cleanPrefix(settings.prefix),updated:new Date().toISOString(),
       settings:{digits:settings.digits,tiff:settings.tiff,mirror:settings.mirror!==false,pixels:settings.pixels,film:settings.film,orientation:settings.orientation,profile:settings.profile,pixelSampling:settings.pixelSampling||'deletion',exposureMultiplier:Number(settings.exposureMultiplier??1),dummyLines:settings.dummyLines||'recorded'},
-      frames:records.map(({thumb,large,...r})=>r)};
+      frames:records.map(({thumb,large,repairMask,...r})=>r)};
   }
 
   async function nextFree(store,settings,from,limit=10000){
