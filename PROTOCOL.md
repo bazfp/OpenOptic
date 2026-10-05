@@ -91,6 +91,13 @@ sequence above and add three facts; details in `CAPTURE_FINDINGS_COLOUR_ME_IR.md
   LED; the IR dark frame uses 0xA8 = 0x23. The IR job is a complete second sequence with its own
   calibration (AFE gain ~0x37–0x3A, offsets ~0). Successive passes land 2–3 raw lines apart.
 - **RAMADDR (0x29–0x2B)** is set to 0 before each shading upload.
+- **Multi-exposure is two complete sequences** (Kodak Gold capture): pass 2 recalibrates at 1×
+  and differs only in its main scan (the four changes above). The long pass carries extra dark
+  signal: long = slope·short + offset, offsets 870–2,040 counts with each pass's dark frame removed.
+- Calibration levels and AFE gains do not depend on the film stock (Lucky 200 and Kodak Gold 200
+  agree within 2 % and one gain step); the references are read through the holder.
+- The interrupt endpoint reports `0x08` (GPIO4 position sensor), `0x04` (front button A, GPIO3)
+  and `0x02` (front button B, GPIO2).
 
 ---
 
@@ -398,8 +405,6 @@ the same at every resolution.
 ## 10. What is still unknown
 
 - Registers 0x60–0x66 (motor phase/step select): never written in any capture.
-- The interrupt endpoint's meaning.
 - Register 0x40's bits.
-- The infrared LED: no capture uses it, so infrared scanning is undocumented here.
 - The exact AFE search algorithm (only its observed steps are recorded above).
 - Whether the scan window can be moved beyond optical pixel 10463, and what shading would be needed.

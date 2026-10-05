@@ -43,3 +43,11 @@ const tables=p=>{ let slot=null; const out=[];
   }
   assert.throws(()=>CaptureRuntime.prepareProfile(CAPTURE_PROFILES.full,{dummyLines:'bad'}),e=>e.name==='ScanConfigurationError');
 })().catch(e=>{console.error(e);process.exit(1);});
+// Long exposure ×3 must reproduce SilverFast's captured 3× pass (3600ppiMEfullframe48bitColorLuckyFilm):
+// main-scan LPERIOD 0xA410, LINESEL 0, BUFSEL 0x08, scan tables 25252 then 21000.
+{const q=CaptureRuntime.prepareProfile(CAPTURE_PROFILES.full,{exposureMultiplier:3}), r=q.frames[q.mainFrame].regs;
+ assert.deepEqual([r[0x38],r[0x39],r[0x1e]&15,r[0x20]],[0xa4,0x10,0,0x08]);
+ let slot=null; const t=[]; q.ops.forEach(o=>{ if(o.kind==='control'&&o.rt===0x40&&o.value===0x83&&o.data.length>1)for(let j=0;j<o.data.length;j+=2)if(o.data[j]===0x5b)slot=(o.data[j+1]&0x40)?((o.data[j+1]>>3)&7):null;
+   if(o.kind==='write'&&slot!==null&&slot<=2){const b=Buffer.from(o.data,'base64');t.push([b.readUInt16LE(0),b.readUInt16LE(2)]);} });
+ assert.deepEqual(t.slice(-3),[[25252,21000],[25252,21000],[25252,21000]]);
+ console.log('exposure ×3 matches SilverFast\'s captured 3× pass: LPERIOD 42000, LINESEL 0, BUFSEL 0x08, cruise 21000');}

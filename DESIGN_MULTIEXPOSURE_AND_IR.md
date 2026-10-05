@@ -1,6 +1,6 @@
 # Design: multi-exposure and infrared smart repair
 
-Status: **design phase**. Nothing here is implemented yet. Evidence comes from the two colour-film
+Status: **implemented at 3600 dpi** (phases 1–5; see section 7). Evidence comes from the colour-film
 captures analysed in `CAPTURE_FINDINGS_COLOUR_ME_IR.md`. Each section separates what the captures
 show from what is proposed.
 
@@ -168,11 +168,11 @@ tuned against real masks.
 Both fit comfortably at 3600 dpi. At 7200 dpi (868 MB per raw pass) ME and IR need the second
 pass processed in stripes as it arrives; that is phase 6.
 
-## 6. User interface (proposed)
-- **Advanced → Exposure** becomes **Multi-exposure: off / 2 passes, long pass 2× / 3× / 4×**, with
-  3× marked "as Plustek's software".
-- **Output options → Infrared: off / detect (save IR + mask) / repair**, disabled with an
-  explanation when the film type is B&W.
+## 6. User interface (implemented)
+- **Advanced → Multi-exposure: off / extended range / exposure fusion** and **Long pass 2× / 3× / 4×**
+  (3× as SilverFast).
+- **Output options → Infrared: off / detect (save IR + mask) / repair**, refused with an
+  explanation at other resolutions or with raw-only TIFFs; IR-blocking film is detected per frame.
 - The resolution dropdown's time estimate includes the extra pass.
 - The roll list shows a small badge (ME, IR) and the repair statistics in the frame details.
 
@@ -181,10 +181,10 @@ pass processed in stripes as it arrives; that is phase 6.
 | Phase | Work | Verification |
 |---|---|---|
 | 1 | Capture analysis, findings, this design | done |
-| 2 | Channel-delay fallback fix; multi-sequence profile builder; `full-ir`; `withExposure(k)`; two-pass acquisition | Op-for-op equality with the captures; simulated-scanner tests for both jobs |
-| 3 | ME merge (option A) | Fixture tests with synthetic data; compare with SilverFast's TIFF of the captured frame (statistics only, no images in the repo) |
-| 4 | IR Detect: IR plane, registration, ghost removal, mask, saved files | Registration within 0.25 px on the captured frames; mask overlap with visible defects |
-| 5 | IR Repair | Before/after crops on the captured frame; no change outside the mask |
+| 2 | Channel-delay fallback fix; multi-sequence profile builder; `full-ir`; `withExposure(k)`; two-pass acquisition | Op-for-op equality with the captures; simulated-scanner tests for both jobs (done) |
+| 3 | ME merge (option A) | Fixture tests with synthetic data; compare with SilverFast's TIFF of the captured frame (statistics only, no images in the repo) (done) |
+| 4 | IR Detect: IR plane, registration, ghost removal, mask, saved files | Registration within 0.25 px on the captured frames; mask overlap with visible defects (done) |
+| 5 | IR Repair | Before/after crops on the captured frame; no change outside the mask (done) |
 | 6 | 7200 dpi and prescan variants, stripe processing | Needs captures at 7200 dpi |
 
 ## 8. Open questions
@@ -194,3 +194,19 @@ pass processed in stripes as it arrives; that is phase 6.
 3. Do you scan B&W silver film? It decides how much effort goes into IR-failure detection.
 4. Which comes first, ME or IR repair? ME lowers noise on every film (on this negative mostly in
    green and blue); IR repair removes dust and scratches.
+
+## 9. As built
+
+- Pass order per frame: colour, infrared, long exposure (live preview labels each).
+- IR detection always runs on the **linear** colour pass. In exposure-fusion mode both passes are
+  repaired with the same mask (the long pass first resampled onto the colour grid), then fused.
+- ME offset: the long pass carries 870–2,040 counts of extra dark signal (Kodak Gold), so the merge
+  fits slope and offset per channel and scan. The image black (~470) is below the dark-frame mean
+  (~1,000) because hardware shading subtracts the dark reference; fusion uses
+  `black = darkS − offset/(slope−1)`.
+- IR repair routes by component: compact defects to exemplar inpainting, large faint ones to
+  division by t^γ (γ fitted per frame, ≈ 0.6). Real hairs and scratches on both stocks are removed;
+  coverage 0.04–0.05 % after excluding the film holder.
+- Tests: `tests/enhance.test.cjs` (synthetic ground truth), `tests/multipass_roll.test.cjs`
+  (whole-frame pipeline both modes), `tests/scan_options.test.cjs` and `tests/dummy_lines.test.cjs`
+  (×3 matches the capture op for op).

@@ -111,3 +111,48 @@ Reproduce with `tools/capture_extract.py` (register/AFE state per read, tables, 
   back to the profile's whole-line values 24/48. The B&W captures measured 24.22/48.21, so colour
   film currently loses up to 0.2 line of colour registration. Fix: fall back to the measured
   fractional constants instead of the rounded profile values.
+
+## Kodak Gold 200: full two-pass multi-exposure and a second iSRD capture
+
+Two more 3600 dpi captures, Kodak Gold 200 colour negative:
+`3600ppMultiExposureREALfullframe48bitColorKodakGoldFilm.pcapng` (232.6 s) and
+`3600ppiScan&Infraredfullframe48bitColorKodakGoldFilm.pcapng` (196.8 s). All frames complete.
+
+- **Multi-exposure is two complete sequences.** Pass 1 (main read 13.8–93 s) is identical to the
+  3600 profile. Pass 2 recalibrates at 1× (register state identical to the profile apart from
+  RAMADDR) and its main scan (113.0–232.6 s, 119 s) differs only in LPERIOD 42,000, LINESEL 0,
+  BUFSEL 0x08 and scan-table cruise 21,000: exactly the app's exposure ×3 transform.
+- **Pass-to-pass offset** (multi-exposure): under one raw line here (r = 0.993 at zero offset).
+- **Long-pass black offset.** With each pass's own dark-frame level subtracted, the 3× pass is
+  an affine function of the 1× pass: long = 3.11 · short + 873 (R), 3.12 · short + 1,185 (G),
+  3.06 · short + 2,040 (B) counts. The extra offset is most likely dark signal from the 3×
+  integration time, which the 1×-exposure dark frame does not remove. The merge must fit slope
+  and offset per channel and scan, not divide by 3.
+- **IR on Kodak Gold** behaves as on Lucky: same register changes (0x03 = 0xAF, 0xA8 = 0x27, dark
+  frame 0x23), IR-to-colour offset +1.31 to +1.46 rows and +0.56 to +0.74 column (Lucky: +2.3 to
+  +2.5, +0.8: it varies per scan), dye crosstalk log IR = 0.057 · log R (Lucky 0.065), 0.033 % of
+  pixels defective.
+
+### Film stock comparison (Lucky 200 vs Kodak Gold 200)
+
+| Session | White R/G/B | Dark R/G/B | AFE gain R/G/B |
+|---|---|---|---|
+| Lucky, colour | 56,265 / 60,653 / 60,310 | 942 / 1,048 / 1,344 | 35 / 26 / 33 |
+| Lucky, 3× session | 55,525 / 60,992 / 60,906 | 959 / 1,044 / 1,293 | 34 / 26 / 34 |
+| Kodak Gold, colour | 56,969 / 61,976 / 61,385 | 1,003 / 1,067 / 1,337 | 35 / 27 / 35 |
+| Kodak Gold, ME pass 1 | 55,172 / 60,720 / 59,665 | 976 / 1,020 / 1,404 | 34 / 26 / 33 |
+| Kodak Gold, ME pass 2 | 55,302 / 60,766 / 60,678 | 980 / 1,034 / 1,395 | 34 / 26 / 34 |
+
+- **Calibration does not depend on the film**: white and dark references and AFE gains agree
+  within ~2 % and one gain step across stocks and sessions. The references are read through the
+  holder, not the film, so the recorded calibration replays correctly for any stock.
+- **The negatives differ**, as expected (raw 1× levels, p0.5 / median / p99.5):
+
+| Film | R | G | B | 3× red clipped |
+|---|---|---|---|---|
+| Lucky 200 | 9,274 / 23,470 / 42,311 | 5,622 / 9,170 / 15,690 | 2,570 / 5,555 / 10,085 | 63 % |
+| Kodak Gold 200 | 6,239 / 17,055 / 34,699 | 2,797 / 6,589 / 16,366 | 1,598 / 2,879 / 8,372 | 8 % |
+
+  Kodak Gold is denser, especially in blue (median 4.4 % of full scale), so multi-exposure helps it
+  more than Lucky. The different orange masks are handled per frame by the preview's levels and
+  by negative converters; nothing in scanning is stock-specific.

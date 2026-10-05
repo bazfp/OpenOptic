@@ -25,6 +25,19 @@ main{display:grid;grid-template-columns:380px 1fr;gap:0;min-height:calc(100vh - 
 @media (max-width:900px){main{grid-template-columns:1fr}}
 aside{border-right:1px solid var(--line);padding:16px 18px 40px;overflow:auto}
 @media (max-width:900px){aside{border-right:0;border-bottom:1px solid var(--line)}}
+/* Desktop: a fixed-height app. The sidebar scrolls on its own, so opening sections never moves
+   the preview, the scan bar or the roll list. */
+@media (min-width:901px){
+  body{height:100vh;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+  main{flex:1;min-height:0}
+  aside{min-height:0;overflow-y:auto;overscroll-behavior:contain}
+  .stage{min-height:0;overflow:hidden}
+  .viewer{min-height:0;overflow:hidden}
+  .viewer img,.viewer canvas.live{max-height:100%}
+  .roll{height:26vh;max-height:none;flex:none}
+  .log{height:26vh;flex:none}
+  .details{max-height:16vh;overflow:auto;flex:none}
+}
 section{margin:0 0 22px}
 section h2{font-size:13px;font-weight:600;color:var(--ink2);margin:0 0 8px;letter-spacing:.02em}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
@@ -69,7 +82,8 @@ button.danger{border-color:var(--bad);color:var(--bad)}
 details summary{cursor:pointer;color:var(--ink2);font-size:13px}
 kbd{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--amber)}
 
-.viewer img{max-width:100%;max-height:70vh;background:#000;box-shadow:0 0 0 1px #2c323a}
+.viewer img,.viewer canvas.live{max-width:100%;max-height:70vh;background:#000;box-shadow:0 0 0 1px #2c323a}
+.viewer .livetag{position:absolute;left:18px;top:12px;font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--amber)}
 .roll{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:10px;padding:12px 16px;border-top:1px solid var(--line);max-height:40vh;overflow:auto}
 .roll figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden;cursor:pointer}
 .roll figure.sel{border-color:var(--amber)}
@@ -79,6 +93,7 @@ kbd{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--amber)}
 .roll figcaption b{color:var(--ink);font-weight:500;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .roll .empty{grid-column:1/-1;color:var(--dim);font-size:13px}
 .roll figure.missing{border-style:dashed;opacity:.55}
+.roll figcaption .badge{display:inline-block;margin:2px 4px 0 0;padding:0 5px;border:1px solid var(--amber);border-radius:3px;color:var(--amber);font-size:10px;line-height:15px}
 .roll figure.missing figcaption i{color:var(--bad);font-style:normal;display:block}
 .roll .rollbar{grid-column:1/-1;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--ink2)}
 .roll .rollbar span{flex:1 1 200px}
@@ -154,6 +169,9 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
       <div class="field"><label for="tiffKind">TIFF</label>
         <select id="tiffKind"><option value="aligned">aligned RGB 16-bit</option><option value="both">aligned + raw USB</option><option value="raw">raw USB only</option></select></div>
       <label class="check"><input type="checkbox" id="saveJpeg"> also save a preview JPEG</label>
+      <div class="field"><label for="infrared">Infrared</label>
+        <select id="infrared"><option value="off">off (default)</option><option value="repair">dust &amp; scratch repair</option><option value="detect">detect only (save IR + mask)</option></select></div>
+      <p class="small">Adds an infrared pass (3600 dpi). Dye images are transparent to IR, so dust and scratches show as dark marks. The pass is registered on the defects, the faint cyan-dye ghost is removed, and the mask is built from the IR transmission. <b>Repair</b> fills compact defects by exemplar inpainting from nearby film texture (keeps grain) and corrects large faint ones by their IR transmission; a mask PNG is saved. <b>Detect only</b> saves the registered IR TIFF and mask, leaving the image untouched. Not for B&amp;W silver film or Kodachrome (they block IR; detected and skipped).</p>
       <div class="field"><label for="lampCheck">Illumination check</label>
         <select id="lampCheck"><option value="warn">warn (recommended)</option><option value="wait">wait and retry</option><option value="off">off</option></select></div>
       <label class="check"><input type="checkbox" id="blackLevel"> correct black level (recommended)</label>
@@ -166,9 +184,11 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
       <div class="field"><label for="pixelSampling">Sensor pixels</label>
         <select id="pixelSampling"><option value="deletion">deletion (default)</option><option value="average">averaging (experimental)</option></select></div>
       <p class="small">Sensor averaging applies to calibration reads, framing and frame scans. It reduces horizontal sampling at 1440/3600 dpi; there is no reduction at 7200 dpi. Recorded shading remains in use, so live level checks compare against a deletion-mode reference. This is separate from output line-pair averaging.</p>
-      <div class="field"><label for="exposureMultiplier">Exposure</label>
-        <select id="exposureMultiplier"><option value="1">1× recorded (default)</option><option value="1.5">1.5× (staged, unavailable)</option><option value="2">2× (staged, unavailable)</option><option value="3">3× (staged, unavailable)</option><option value="4">4× (staged, unavailable)</option></select></div>
-      <p class="small" id="exposureNote">Longer exposure can be saved for later implementation. Scanning above 1× is blocked until fresh calibration and motor timing support are implemented.</p>
+      <div class="field"><label for="multiExposure">Multi-exposure</label>
+        <select id="multiExposure"><option value="off">off (one pass, default)</option><option value="range">extended range (linear, for converters)</option><option value="fusion">exposure fusion (tone-mapped positive)</option></select></div>
+      <div class="field"><label for="meFactor">Long pass</label>
+        <select id="meFactor"><option value="2">2× exposure</option><option value="3">3× exposure (as SilverFast)</option><option value="4">4× exposure</option></select></div>
+      <p class="small" id="meNote">Multi-exposure scans the frame twice: normally, then with a longer exposure (line period ×k, motor slowed to match; calibration stays at 1×). <b>Extended range</b> registers the passes, fits long = slope·short + offset per channel and blends them by their noise: shadows (dense negative areas) get the long pass's lower noise, highlights the 1× pass, and the TIFF stays linear 16-bit at the 1× scale for negative converters. <b>Exposure fusion</b> merges the passes Mertens-style (contrast, saturation, well-exposedness, Laplacian pyramids) into an inverted, tone-mapped positive for an artistic look; that TIFF is gamma-encoded, not for converters. 3600 dpi only; about twice the scan time.</p>
       <div class="field"><label for="warm">LED warm-up</label><div class="inline"><input type="number" id="warm" min="0" max="120" step="1" style="width:70px"><span class="small">seconds (default 1)</span></div></div>
       <p class="small">Warm-up applies only when the LED has been off.</p>
       <label class="check"><input type="checkbox" id="keepLamp"> keep the LED on between frames (off after 15 min idle)</label>
@@ -176,8 +196,8 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
         <select id="pixels"><option value="square">average line pairs (default)</option><option value="lanczos">Lanczos-3 (sharper, less grain aliasing)</option><option value="full">keep all lines (2× height)</option></select></div>
       <p class="small">The scanner samples twice as many lines as columns. Averaging line pairs and Lanczos-3 both give square pixels. Lanczos-3 aligns the colours and reduces the lines in one step: vertical detail is kept better, with less grain aliasing and slightly less noise, at about 1–3 seconds' extra processing. Very hard edges may show a faint halo. “Keep all lines” saves every line with separate X/Y dpi tags; most programs display it stretched.</p>
       <div class="field"><label for="dummyLines">Dummy lines</label>
-        <select id="dummyLines"><option value="recorded">as recorded (default)</option><option value="fewer">one fewer (faster)</option><option value="none">none (fastest)</option></select></div>
-      <p class="small" id="dummyNote">Experimental, untested on hardware. Skips the unused CCD lines the official software inserts (1 at 3600 dpi, 2 at 7200) and speeds the motor to match; image size and exposure are unchanged. Vertical detail becomes slightly softer, and data arrives faster (up to 11 MB/s), so check for bands.</p>
+        <select id="dummyLines"><option value="none">none (fastest, default)</option><option value="fewer">one fewer</option><option value="recorded">as recorded (Plustek timing)</option></select></div>
+      <p class="small" id="dummyNote">Plustek inserts unused CCD lines between real ones (1 at 3600 dpi, 2 at 7200). The default skips them and speeds the motor to match, as SANE does and as SilverFast itself does for its long-exposure pass: 3600 dpi in about 40 s instead of 80 s. Image size and exposure are unchanged; vertical detail is slightly softer than with Plustek timing.</p>
       <div class="field" id="btn3Row"><label for="btn3">Front button A</label>
         <select id="btn3"><option value="scan">Scan &amp; Save</option><option value="preview">Check framing</option><option value="stop">Stop</option><option value="none">nothing</option></select></div>
       <div class="field" id="btn2Row"><label for="btn2">Front button B</label>
@@ -200,6 +220,8 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
 <div class="stage">
   <div class="viewer" id="viewer">
     <img id="view" alt="" hidden>
+    <canvas id="live" class="live" hidden></canvas>
+    <div class="livetag" id="liveTag" hidden></div>
     <div class="lamp" id="lampState">lamp off</div>
     <div class="hint" id="hint">Load the first frame, then press Space to scan and save it.</div>
   </div>
@@ -237,6 +259,7 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
 <script src="capture_profiles.js"></script>
 <script src="capture_runtime.js"></script>
 <script src="capture_sim.js"></script>
+<script src="enhance.js"></script>
 <script src="roll.js"></script>
 <script src="motion.js"></script>
 <script>
@@ -494,16 +517,17 @@ function scheduleLampOff(){
 }
 
 // ---------------------------------------------------------------- acquisition (recorded vendor profiles)
-async function acquire(key, requested=settings){
-  const scanSettings={...requested};
+async function acquire(key, requested=settings, options={}){
+  const scanSettings={...requested}; live=null;
   const p=CaptureRuntime.prepareProfile(CAPTURE_PROFILES[key],scanSettings); traceMark=trace.length;
   const dl=p.acquisitionOptions?.dummyLines;
-  log('',`sensor pixels: ${scanSettings.pixelSampling||'deletion'}; exposure: recorded (1×); dummy lines: ${dl&&dl.used!==dl.recorded?`${dl.used} (recorded ${dl.recorded}), motor cruise ${p.motorCruise.recorded}→${p.motorCruise.used}, needs ${(p.scan.bytesPerSecond/1e6).toFixed(2)} MB/s`:'as recorded'}`);
+  log('',`sensor pixels: ${scanSettings.pixelSampling||'deletion'}; exposure: ${p.acquisitionOptions?.exposure?p.acquisitionOptions.exposure.multiplier+'× (line period '+p.scan.lPeriod+')':'recorded (1×)'}; dummy lines: ${dl&&dl.used!==dl.recorded?`${dl.used} (recorded ${dl.recorded}), motor cruise ${p.motorCruise.recorded}→${p.motorCruise.used}, needs ${(p.scan.bytesPerSecond/1e6).toFixed(2)} MB/s`:'as recorded'}`);
   if(p.acquisitionOptions?.pixelSampling==='average') log('w','Experimental sensor averaging: live calibration reads use averaging, but AFE/shading and comparison references are recorded in deletion mode. This is not fresh calibration.' );
   let positioning=null;
   const hooks={check:checkCancel,log:m=>log('io',m),events:dry?undefined:()=>scannerEventCursor(),positioned:x=>{positioning=x;},sleep:async ms=>{for(let left=ms;left>0;left-=50){checkCancel();await sleep(Math.min(left,50));}},
-    progress:(frame,got,total)=>{if(frame===p.mainFrame)progress(got/total);}};
-  const scanning=()=>say(`Scanning ${key==='full7200'?'at 7200 dpi':key==='full'?'at 3600 dpi':'quick pass'} (about ${p.scan.seconds>=100?Math.round(p.scan.seconds/60*2)/2+' min':Math.round(p.scan.seconds)+' s'})…`,'busy');
+    progress:(frame,got,total,data)=>{ if(frame!==p.mainFrame) return; progress(got/total);
+      try{ if(!live) liveStart(p,scanSettings,options.liveLabel||(key==='prescan'?'framing preview':'scanning')); live.lp.update(data,got); liveDraw(got===total); }catch(e){ console.warn('live preview',e); } }};
+  const scanning=()=>say(`${options.liveLabel?options.liveLabel[0].toUpperCase()+options.liveLabel.slice(1)+': s':'S'}canning ${key==='full7200'?'at 7200 dpi':key==='full'||key==='full-ir'?'at 3600 dpi':'quick pass'} (about ${p.scan.seconds>=100?Math.round(p.scan.seconds/60*2)/2+' min':Math.round(p.scan.seconds)+' s'})…`,'busy');
   if(!dry){
     // a complete previous scan leaves the carriage where the chip's own return parks it (as in the
     // recordings); anything else (connect, failure, stop, manual moves) gets a full homing
@@ -535,11 +559,14 @@ async function acquire(key, requested=settings){
   for(let attempt=1;;attempt++){
     lamp={};
     hooks.frameDone=async(i,data)=>{
-      if(scanSettings.lampCheck==='off'&&p.acquisitionOptions?.pixelSampling!=='average') return;
+      const needNoise=options.noise;
+      if(scanSettings.lampCheck==='off'&&p.acquisitionOptions?.pixelSampling!=='average'&&!needNoise) return;
       const kind=i===p.lamp.line.frame?'line':i===p.lamp.dark.frame?'dark':'shading';
       const st=CaptureRuntime.whiteStats(data,p.frames[i]);
+      if(needNoise&&kind!=='line') lamp[kind]={noise:CaptureRuntime.noiseStats(data,p.frames[i])};
+      if(scanSettings.lampCheck==='off'&&p.acquisitionOptions?.pixelSampling!=='average'){ if(kind==='dark') lamp.dark.mean=st.mean; return; }
       const v=kind==='dark'?CaptureRuntime.darkVerdict(st,p.lamp.dark):CaptureRuntime.lampVerdict(kind,st,p.lamp[kind]);
-      lamp[kind]={...st,...v};
+      lamp[kind]={...st,...v,noise:lamp[kind]?.noise};
       log(v.ok?'':'w',kind==='dark'
         ?`black level (LED off): R ${v.delta[0]>0?'+':''}${v.delta[0]}, G ${v.delta[1]>0?'+':''}${v.delta[1]}, B ${v.delta[2]>0?'+':''}${v.delta[2]} counts vs the recorded calibration${v.ok?' (within tolerance)':scanSettings.blackLevel?' → corrected in the image':' → NOT corrected (option off): expect a colour cast'}`
         :`illumination check, ${kind==='line'?'white line':'white shading'}: level ${v.levelPct>0?'+':''}${v.levelPct} %, G/R ${v.grPct>0?'+':''}${v.grPct} %, B/R ${v.brPct>0?'+':''}${v.brPct} %, ripple ${v.flickerPct} %${v.ok?' (within recorded reference limits)':' → '+v.issues.join('; ')}`);
@@ -548,7 +575,7 @@ async function acquire(key, requested=settings){
       if(!v.ok) lamp.warning=[lamp.warning,...v.issues].filter(Boolean).join('; ');
     };
     try{
-      if(dry){ bytes=await CaptureRuntime.run(p,CaptureSim.create(p,{lampReadyAt:window.__dryLampReadyAt||0}),hooks); break; }
+      if(dry){ bytes=await CaptureRuntime.run(p,CaptureSim.create(p,{lampReadyAt:window.__dryLampReadyAt||0,pace:window.__dryPace??p.scan.bytesPerSecond*4}),hooks); break; }
       bytes=await CaptureRuntime.run(p,io,hooks);
       const deadline=performance.now()+60000;      // the recordings end during automatic return
       while(!((await status())&0x08)){ checkCancel(); if(performance.now()>deadline) throw new Error('carriage did not return home'); await sleep(100); }
@@ -596,12 +623,12 @@ const store={
 const KEY='opticfilm.roll.v1';
 const sep=(window.NATIVE_USB?.defaultDir||'').includes('\\')?'\\':'/';
 const defaults={dir:window.NATIVE_USB?.defaultDir?window.NATIVE_USB.defaultDir+sep+'Roll001':'',prefix:'Roll001_',next:1,digits:2,film:'neg',orientation:1,
-  tiff:'aligned',pixels:'square',profile:'full',jpeg:false,mirror:true,warm:1,keepLamp:true,lampCheck:'warn',blackLevel:true,pixelSampling:'deletion',exposureMultiplier:'1',dummyLines:'recorded',btn3:'scan',btn2:'preview'};
+  tiff:'aligned',pixels:'square',profile:'full',jpeg:false,mirror:true,warm:1,keepLamp:true,lampCheck:'warn',blackLevel:true,pixelSampling:'deletion',multiExposure:'off',meFactor:'3',infrared:'off',dummyLines:'none',btn3:'scan',btn2:'preview'};
 let settings={...defaults}, records=[], pending=null, selected=null, rescan=null;
-try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s){ settings={...defaults,...s.settings}; records=s.records||[]; if(!s.v&&settings.warm===20) settings.warm=1; } }catch(e){}   // 20 s was the old default
-function persist(){ if(dry) return; try{ localStorage.setItem(KEY,JSON.stringify({v:2,settings,records:records.map(({large,...r})=>r)})); }catch(e){ log('w','could not remember the roll list in this browser: '+e.message); } }
+try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s){ settings={...defaults,...s.settings}; records=s.records||[]; if(!s.v&&settings.warm===20) settings.warm=1; if((s.v||0)<3&&settings.dummyLines==='recorded') settings.dummyLines='none'; delete settings.exposureMultiplier; } }catch(e){}   // 20 s was the old default
+function persist(){ if(dry) return; try{ localStorage.setItem(KEY,JSON.stringify({v:3,settings,records:records.map(({large,...r})=>r)})); }catch(e){ log('w','could not remember the roll list in this browser: '+e.message); } }
 const bind=[['outDir','dir','text'],['prefix','prefix','text'],['nextNo','next','int'],['digits','digits','int'],['film','film','text'],['orient','orientation','int'],
-  ['tiffKind','tiff','text'],['pixels','pixels','text'],['profileSel','profile','text'],['saveJpeg','jpeg','check'],['mirror','mirror','check'],['warm','warm','int'],['keepLamp','keepLamp','check'],['lampCheck','lampCheck','text'],['blackLevel','blackLevel','check'],['pixelSampling','pixelSampling','text'],['exposureMultiplier','exposureMultiplier','text'],['dummyLines','dummyLines','text'],['btn3','btn3','text'],['btn2','btn2','text']];
+  ['tiffKind','tiff','text'],['pixels','pixels','text'],['profileSel','profile','text'],['saveJpeg','jpeg','check'],['mirror','mirror','check'],['warm','warm','int'],['keepLamp','keepLamp','check'],['lampCheck','lampCheck','text'],['blackLevel','blackLevel','check'],['pixelSampling','pixelSampling','text'],['multiExposure','multiExposure','text'],['meFactor','meFactor','text'],['infrared','infrared','text'],['dummyLines','dummyLines','text'],['btn3','btn3','text'],['btn2','btn2','text']];
 function toUI(){ for(const [id,k,t] of bind){ if(t==='check') $(id).checked=!!settings[k]; else $(id).value=settings[k]; } refreshName(); }
 function fromUI(){ for(const [id,k,t] of bind){ settings[k]=t==='check'?$(id).checked:t==='int'?parseInt($(id).value||'0',10):$(id).value.trim(); }
   const clean=Roll.cleanPrefix(settings.prefix); if(clean!==settings.prefix){ settings.prefix=clean; $('prefix').value=clean; } persist(); refreshName(); }
@@ -614,7 +641,12 @@ function refreshName(){
 const DPI_LABEL={prescan:'1440 dpi',full:'3600 dpi',full7200:'7200 dpi'}, DPI_MB={prescan:'~16 MB',full:'~103 MB',full7200:'~411 MB'};
 const fmtSecs=s=>s>=100?`${Math.floor(s/60)} min${s%60>=15?' '+Math.round(s%60)+' s':''}`:`${Math.round(s)} s`;
 // main-pass time; calibration and positioning add a few seconds
-const scanSecs=key=>{ try{ return CaptureRuntime.prepareProfile(CAPTURE_PROFILES[key],{dummyLines:settings.dummyLines}).scan.seconds; }catch(e){ return CAPTURE_PROFILES[key].scan.seconds; } };
+const passSecs=(key,o)=>{ try{ return CaptureRuntime.prepareProfile(CAPTURE_PROFILES[key],o).scan.seconds; }catch(e){ return CAPTURE_PROFILES[key].scan.seconds; } };
+const extraPasses=key=>key==='full'?{me:settings.multiExposure!=='off',ir:settings.infrared!=='off'}:{me:false,ir:false};
+const scanSecs=key=>{ const x=extraPasses(key); let t=passSecs(key,{dummyLines:settings.dummyLines});
+  if(x.ir) t+=passSecs('full-ir',{dummyLines:settings.dummyLines})+15;
+  if(x.me) t+=passSecs(key,{dummyLines:settings.dummyLines,exposureMultiplier:Number(settings.meFactor)})+15;
+  return t; };
 const DPI_INFO={prescan:'Quick index scan: 1440 dpi, ~16 MB, ~16 s',full:'Full resolution: 3600 dpi, ~103 MB, ~80 s',full7200:'Maximum: 7200 dpi, ~411 MB, ~4 min, needs ~1.4 GB free memory'};
 const tifName=n=>{ try{ return (Roll.fileNames(settings,n).find(f=>f.kind==='tiff'||f.kind==='raw-tiff')||{name:safeBase(n)}).name; }catch(e){ return '—'; } };
 const safeBase=n=>{ try{ return Roll.baseName(settings.prefix,n,settings.digits); }catch(e){ return '—'; } };
@@ -639,6 +671,7 @@ function renderRoll(){
     const img=document.createElement('img'); img.alt=r.base; if(r.thumb) img.src=r.thumb;
     const cap=document.createElement('figcaption'); const mb=r.files.reduce((a,x)=>a+(x.bytes||0),0)/1048576;
     cap.innerHTML=`<b></b>${mb.toFixed(0)} MB · ${new Date(r.scanned).toLocaleTimeString()}`; cap.querySelector('b').textContent=r.base;
+    if(r.enhanced?.length){ const bd=document.createElement('div'); for(const t of r.enhanced){ const m=document.createElement('span'); m.className='badge'; m.textContent=t; m.title=t==='ME'?'multi-exposure':'infrared'; bd.appendChild(m); } cap.appendChild(bd); }
     if(missing.has(r.number)){ const m=document.createElement('i'); m.textContent='file missing'; cap.appendChild(m); }
     f.append(img,cap); f.onclick=()=>select(r); R.appendChild(f);
   }
@@ -688,7 +721,29 @@ async function removeRecords(numbers){
     catch(e){ log('w','roll record not updated: '+e.message); }
   }
 }
-function show(src){ const v=$('view'); if(src){ v.src=src; v.hidden=false; $('hint').hidden=true; } }
+function show(src){ const v=$('view'); if(src){ v.src=src; v.hidden=false; $('hint').hidden=true; $('live').hidden=true; $('liveTag').hidden=true; } }
+
+// ---------------------------------------------------------------- live preview while scanning
+// The frame is drawn line by line as the scanner delivers it (CaptureRuntime.livePreview), with the
+// same inversion as the final preview, mirrored and rotated to match. Levels refine as rows arrive.
+let live=null;
+function liveStart(p,s,label){
+  const lp=CaptureRuntime.livePreview(p,{maxWidth:1000,mirror:s.mirror!==false});
+  const base=document.createElement('canvas'); base.width=lp.width; base.height=lp.height;
+  live={lp,base,last:0,film:s.film,rot:{1:0,6:90,3:180,8:-90}[s.orientation]||0,label};
+  const c=$('live'), swap=Math.abs(live.rot)===90; c.width=swap?lp.height:lp.width; c.height=swap?lp.width:lp.height;
+  const x=c.getContext('2d'); x.fillStyle='#000'; x.fillRect(0,0,c.width,c.height);
+  c.hidden=false; $('view').hidden=true; $('hint').hidden=true; $('liveTag').hidden=false; $('liveTag').textContent=label;
+}
+function liveDraw(force){
+  const L=live; if(!L||!L.lp.rows) return;
+  const now=performance.now(); if(!force&&now-L.last<300) return; L.last=now;
+  const {lp,base}=L, rows=lp.rows, bx=base.getContext('2d'), im=bx.createImageData(lp.width,rows);
+  im.data.set(CaptureRuntime.renderPreview(lp.planes,{pixels:lp.width,lines:rows},L.film)); bx.putImageData(im,0,0);
+  const c=$('live'), x=c.getContext('2d'); x.save(); x.setTransform(1,0,0,1,0,0); x.translate(c.width/2,c.height/2); x.rotate(L.rot*Math.PI/180);
+  x.drawImage(base,-base.width/2,-base.height/2); x.restore();
+  $('liveTag').textContent=`${L.label} · ${Math.round(rows/lp.height*100)} %`;
+}
 
 // preview rendering: auto levels per channel, inversion for negatives, orientation as the TIFF tag says
 async function makePreview(planes,g,s){
@@ -705,7 +760,27 @@ async function makePreview(planes,g,s){
 const previewJpeg=async p=>p?.large?(await fetch(p.large)).blob():null;
 
 // ---------------------------------------------------------------- the per-frame workflow
-function ctxFor(number,overwrite){ const snapshot={...settings}; return {settings:snapshot,number,overwrite,store,acquire:key=>acquire(key,snapshot),makePreview,previewJpeg,log:m=>log('ok',m)}; }
+// One frame: the colour pass, then (optionally) the infrared pass and the long-exposure pass, each a
+// complete recorded sequence with its own calibration, as SilverFast runs them.
+function checkExtras(key,s){
+  const me=s.multiExposure&&s.multiExposure!=='off', ir=s.infrared&&s.infrared!=='off';
+  if(!me&&!ir) return {me,ir};
+  const bad=m=>{ const e=new Error(m); e.name='ScanConfigurationError'; throw e; };
+  if(key!=='full') bad('Multi-exposure and infrared are available at 3600 dpi only (the recorded IR sequence and the merge are 3600 dpi). Switch them off or choose 3600 dpi.');
+  if(s.tiff==='raw') bad('Multi-exposure and infrared need the aligned TIFF: choose “aligned RGB 16-bit” or “aligned + raw USB”.');
+  return {me,ir};
+}
+async function acquireJob(key,snap){
+  const x=checkExtras(key,snap), n=1+x.me+x.ir; let k=1;
+  const lbl=what=>n>1?`pass ${k++} of ${n}: ${what}`:undefined;
+  const first=await acquire(key,snap,{liveLabel:lbl('colour'),noise:x.me});
+  if(!x.me&&!x.ir) return first;
+  const job={...first};
+  if(x.ir){ const r=await acquire('full-ir',{...snap,pixelSampling:snap.pixelSampling},{liveLabel:lbl('infrared')}); job.ir={bytes:r.bytes,profile:r.profile,lamp:r.lamp}; }
+  if(x.me){ const f=Number(snap.meFactor)||3; const r=await acquire(key,{...snap,exposureMultiplier:f},{liveLabel:lbl(`${f}× exposure`),noise:true}); job.long={bytes:r.bytes,profile:r.profile,lamp:r.lamp,factor:f}; }
+  return job;
+}
+function ctxFor(number,overwrite){ const snapshot={...settings}; return {settings:snapshot,number,overwrite,store,acquire:key=>acquireJob(key,snapshot),makePreview,previewJpeg,log:m=>log('ok',m)}; }
 function checkReady(){
   if(!settings.dir&&nativeFiles) throw new Error('Choose a folder for this roll first.');
   if(nativeFiles&&!/^([A-Za-z]:[\\/]|\\\\|\/)/.test(settings.dir)) throw new Error('The folder must be a full path, e.g. '+(sep==='\\'?'C:\\Scans\\Roll001':'/home/me/Scans/Roll001'));
@@ -713,7 +788,7 @@ function checkReady(){
 }
 async function scanAndSave(){
   fromUI(); checkReady();
-  CaptureRuntime.prepareProfile(CAPTURE_PROFILES[settings.profile],settings);
+  CaptureRuntime.prepareProfile(CAPTURE_PROFILES[settings.profile],settings); checkExtras(settings.profile,settings);
   const number=rescan??settings.next, overwrite=rescan!==null, base=Roll.baseName(settings.prefix,number,settings.digits);
   say(`Scanning ${base}…`,'busy'); log('',`frame ${base}: scan started`);
   let r;
@@ -805,7 +880,7 @@ $('pkNative').onclick=async()=>{
 };
 
 // ---------------------------------------------------------------- buttons, keys, guard
-function enableScan(){ ['pixelSampling','exposureMultiplier','dummyLines'].forEach(id=>$(id).disabled=operationActive||!!pending); const ok=(connected||dry)&&!pending&&!operationActive; $('bScan').disabled=(connected||dry)?!ok:operationActive; $('bPreview').disabled=!ok; ['bHome','bLamp','bReconnect','bMonitor'].forEach(i=>$(i).disabled=!connected||operationActive); $('bTrace').disabled=!(connected&&trace.length>traceMark); $('bStop').disabled=!connected; }
+function enableScan(){ ['pixelSampling','multiExposure','meFactor','infrared','dummyLines'].forEach(id=>$(id).disabled=operationActive||!!pending); const ok=(connected||dry)&&!pending&&!operationActive; $('bScan').disabled=(connected||dry)?!ok:operationActive; $('bPreview').disabled=!ok; ['bHome','bLamp','bReconnect','bMonitor'].forEach(i=>$(i).disabled=!connected||operationActive); $('bTrace').disabled=!(connected&&trace.length>traceMark); $('bStop').disabled=!connected; }
 function guard(fn){ return async()=>{ if(operationActive) return; operationActive=true; cancelFlag=false; enableScan(); $('bStop').disabled=!(connected||dry);
   try{ await fn(); }
   catch(e){ if(e instanceof Cancelled){ log('w','stopped'); say('Stopped. The carriage has been parked.'); try{ cancelFlag=false; await stopMotor(); await home(); }catch(_){} }

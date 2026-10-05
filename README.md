@@ -106,7 +106,7 @@ The bar under the preview holds the resolution choice (1440 / 3600 / 7200 dpi, e
 
 **Flip horizontally** (Roll section) is on by default. It mirrors the aligned TIFF, the preview JPEG, the on-screen framing prescan and the roll thumbnails. The flip is applied after channel alignment and 7200 dpi column-stagger correction (which follow native sensor column parity) and before the TIFF orientation tag. The raw USB TIFF is never flipped. The sidecar records it under `processing.horizontalMirror`.
 
-**Advanced** holds exposure, sensor pixel averaging, LED warm-up, keep LED on, and **Line doubling**.
+**Advanced** holds multi-exposure, sensor pixel averaging, dummy lines, front-button actions, LED warm-up, keep LED on, and **Line doubling**.
 
 The scanner samples twice as many lines as columns (the official software steps the carriage half as far per line as the sensor's column spacing). Line doubling offers three ways to handle this:
 
@@ -116,9 +116,9 @@ The scanner samples twice as many lines as columns (the official software steps 
 
 The sidecar records the method under `processing.verticalAveraging` and `processing.interpolation`, and each TIFF entry records `lineFilter`.
 
-## Dummy lines (experimental)
+## Dummy lines
 
-**Advanced → Dummy lines** shortens the main scan. At 3600 and 7200 dpi the official software sets the GL843's LINESEL to 1 and 2: after every real CCD line it clocks out 1 or 2 unused lines. The datasheet gives their purpose only as resolving the "start/stop (discontinuous) problem", i.e. restarts after buffer-full backtracking.
+**Advanced → Dummy lines** defaults to **none**, as SANE does: 3600 dpi in about 40 s instead of 80 s. It shortens the main scan. At 3600 and 7200 dpi the official software sets the GL843's LINESEL to 1 and 2: after every real CCD line it clocks out 1 or 2 unused lines. The datasheet gives their purpose only as resolving the "start/stop (discontinuous) problem", i.e. restarts after buffer-full backtracking.
 
 | Setting | 3600 dpi | 7200 dpi | Data rate needed |
 |---|---|---|---|
@@ -128,7 +128,7 @@ The sidecar records the method under `processing.verticalAveraging` and `process
 
 Only the main scan changes: LINESEL is written in its start write, and its motor tables' cruise period is scaled by the same factor (14000 to 7000 at 3600 dpi; 42000 to 28000 or 14000 at 7200 dpi), so the carriage still moves the recorded number of steps per line. Line spacing, image size, colour offsets, LINCNT, exposure (LPERIOD), the calibration frames and the shading tables stay as recorded. The recorded white references were read with 1, 2 and 5 dummy lines and came out at the same level, so dummy lines do not lengthen the exposure.
 
-The costs: each line is exposed while the carriage moves 2 or 3 times further, so vertical detail is softer (closer to SANE's default); the page must sustain the higher data rate or it stops the scan; and without dummy lines a restart after backtracking may leave a visible band. This mode has not been tested on hardware. The frame sidecar records the setting under `acquisition.options.dummyLines` and `acquisition.scanTiming`.
+The costs: each line is exposed while the carriage moves 2 or 3 times further, so vertical detail is softer (closer to SANE's default); the page must sustain the higher data rate or it stops the scan; and without dummy lines a restart after backtracking may leave a visible band. The frame sidecar records the setting under `acquisition.options.dummyLines` and `acquisition.scanTiming`.
 
 ## Scanner events, front buttons and the positioning stop
 
@@ -162,13 +162,7 @@ mode even if illumination checking was set to off; they compare against the
 recorded deletion-mode references and do not generate fresh shading coefficients.
 No image-quality improvement has been verified on hardware.
 
-**Exposure** defaults to the recorded 1× exposure. Choices of 1.5×, 2×, 3× and 4×
-are saved for later development, but scanning or framing above 1× is blocked
-before homing, lamp commands or acquisition. These are staged choices, not working
-long-exposure modes. Select 1× to scan. Enabling them requires fresh AFE/shading
-calibration, coordinated line/motor timing, register/table range validation, and
-hardware tests. Merely increasing LPERIOD would alter the carriage distance per
-line with the existing motor curve.
+The old staged **Exposure** setting is replaced by **Multi-exposure** (below).
 
 Choices persist across page reloads and are locked during acquisition. Frame JSON
 sidecars record the applied options and effective register values; the source
@@ -217,3 +211,50 @@ Regression: `node tests/stagger.test.cjs` covers direction/parity, sharp edges,
 fractional RGB alignment, full-height and averaged TIFFs, in-place output, preview
 sampling, raw-byte preservation and sidecar metadata. This update also retains
 the earlier scan-sequencing and black-level overflow fixes.
+
+## Live preview while scanning
+
+The viewer draws the frame as the scanner delivers it, line by line, with the colour delays
+applied, inverted for negatives, mirrored and rotated as the final preview will be. Levels refine
+as rows arrive. Each pass of a multi-pass frame is labelled ("pass 2 of 3: infrared · 40 %").
+
+## Multi-exposure (Advanced, 3600 dpi)
+
+The frame is scanned twice, as SilverFast does: the normal pass, then a long-exposure pass
+(line period ×2, ×3 or ×4, no dummy lines, motor cruise scaled so the line spacing stays the same;
+calibration stays at 1×). The ×3 pass is byte-for-byte the register state of SilverFast's own
+multi-exposure pass. Two modes:
+
+- **Extended range** (linear): the long pass is registered (sub-pixel) to the normal pass, fitted
+  per channel as `long = slope·short + offset` (Kodak Gold: slopes 3.06–3.12, offsets 870–2,040
+  counts of dark signal), and the two are blended by inverse variance using a noise model from the
+  calibration frames. The long pass fades out at 90–98 % of full scale, so clipped samples (the
+  orange-mask red channel on Lucky film) come from the normal pass only. Output stays linear 16-bit
+  at the normal-pass scale, ready for negative converters. On Kodak Gold shadow noise drops by
+  about a quarter in red and green and nearly half in blue.
+- **Exposure fusion** (artistic): both passes are inverted and merged Mertens-style (contrast,
+  saturation and well-exposedness weights, Laplacian-pyramid blend). The TIFF is a gamma-encoded,
+  tone-mapped positive, not for converters.
+
+## Infrared dust and scratch repair (Output options, 3600 dpi)
+
+Adds a third, complete infrared sequence (white LED off, IR LED on via GPIO27, as recorded from
+SilverFast's iSRD). Colour dyes are transparent to IR, so dust, hair and scratches are the only
+dark marks. Processing: registration of the IR pass on the defects themselves (the pass lands
+1–2.5 lines off), removal of the faint cyan-dye ghost (log IR ≈ 0.06·log R), a transmission map,
+exclusion of the film holder, then a mask. **Repair** fills compact defects by exemplar
+(patch-based) inpainting from nearby film texture, which keeps the grain, and divides large faint
+defects by their IR transmission^γ (γ ≈ 0.6 measured). **Detect only** saves the registered IR
+TIFF (`_ir.tif`) and mask (`_irmask.png`) and leaves the image alone. B&W silver film and
+Kodachrome block IR; that is detected and the frame is not repaired.
+
+Detection takes about 20 s per 3600 dpi frame, repair under 1 s. Settings are recorded in the
+sidecar under `processing.multiExposure` and `processing.infrared`; the roll list shows ME and IR
+badges. Neither works with “raw USB only” TIFFs.
+
+## Film stocks
+
+Scanning is not stock-specific: the calibration is read through the holder, not the film, and
+matched across Lucky 200 and Kodak Gold 200 within 2 %. The orange mask is handled per frame by
+the preview levels and by negative converters. Kodak Gold is denser (blue median 4 % of full
+scale against Lucky's 8 %), so it benefits more from multi-exposure.

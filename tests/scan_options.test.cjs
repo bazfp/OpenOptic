@@ -21,8 +21,10 @@ for(const [name,base] of Object.entries(CAPTURE_PROFILES)){
   assert.deepEqual(p.scan,base.scan);
   assert.equal(p.acquisitionOptions.averagingReducesPixels,name!=='full7200');
   assert.equal(JSON.stringify(base),original,'preparation must not mutate recorded profiles');
-  for(const exposure of [1.5,2,3,4,'2'])assert.throws(()=>CaptureRuntime.prepareProfile(base,{exposureMultiplier:exposure}),e=>e.name==='ScanConfigurationError'&&/not implemented/.test(e.message));
-  for(const exposure of [0,NaN,Infinity,'bad',''])assert.throws(()=>CaptureRuntime.prepareProfile(base,{exposureMultiplier:exposure}),e=>e.name==='ScanConfigurationError');
+  for(const exposure of [1.5,0,NaN,Infinity,'bad',''])assert.throws(()=>CaptureRuntime.prepareProfile(base,{exposureMultiplier:exposure}),e=>e.name==='ScanConfigurationError');
+  for(const k of [2,3,4]){ const q=CaptureRuntime.prepareProfile(base,{exposureMultiplier:String(k)}), r=q.frames[q.mainFrame].regs;
+    assert.equal((r[0x38]<<8)|r[0x39],base.scan.lPeriod*k); assert.equal(r[0x1e]&15,0); assert.equal(r[0x20],0x08);
+    assert.equal(q.scan.lineSeconds.toFixed(4),(base.scan.lPeriod*k*0.4e-6).toFixed(4)); assert.equal(q.acquisitionOptions.exposure.multiplier,k); }
   assert.throws(()=>CaptureRuntime.prepareProfile(base,{pixelSampling:'bad'}),/sampling/);
-  console.log(name+': defaults unchanged, averaging-only register changes, metadata, immutable source, exposure gate passed');
+  console.log(name+': defaults unchanged, averaging-only register changes, metadata, immutable source, exposure ×2/×3/×4 transforms passed');
 }

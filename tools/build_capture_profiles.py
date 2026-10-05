@@ -1,12 +1,30 @@
 #!/usr/bin/env python3
 """Extract vendor transactions and uploaded tables; never embed captured photographs.
 Usage: python3 tools/build_capture_profiles.py prescan.pcapng 3600ppifullframehdr.pcapng [7200ppifullframehdr.pcapng]
+       python3 tools/build_capture_profiles.py --add KEY "Name" DPI YRES G,B capture.pcapng[@SEQUENCE]
+The --add form inserts or replaces one profile in the existing capture_profiles.js. SEQUENCE picks
+one scan sequence of a capture that holds several (the iSRD capture: 0 = colour, 1 = infrared);
+sequences start where the host re-reads the device descriptor before booting the scanner again.
 """
 import base64, hashlib, json, pathlib, sys
 from capture_analyse import decode
 
-def build(path, name, dpi, yres, shifts):
+def sequences(raw):
+    """Split a capture's events into scan sequences: each starts at a GET_DESCRIPTOR(device)
+    followed within 50 ms by the vendor's first status read (0x8E index 0)."""
+    starts=[]
+    for i,e in enumerate(raw):
+        if e['kind']=='ctl' and e['bmr']==0x80 and e['req']==6 and e['wv']==0x100:
+            nxt=next((x for x in raw[i+1:i+8] if x['kind']=='ctl' and x['bmr']==0xC0 and x['wv']==0x8E and x['wi']==0),None)
+            if nxt and nxt['ts']-e['ts']<50_000: starts.append(i)
+    starts=starts or [0]
+    return [raw[a:b] for a,b in zip(starts,starts[1:]+[len(raw)])]
+
+def build(path, name, dpi, yres, shifts, sequence=None):
     events, raw = decode(path)
+    if sequence is not None:
+        seqs=sequences(raw)
+        raw=seqs[sequence]
     headers = [e for e in raw if e['kind']=='ctl' and e['wv']==0x82 and e['out'][0]==0]
     main = max(headers, key=lambda e:int.from_bytes(e['out'][4:8], 'little'))
     regs={}; ops=[]; addr=None; previous=None; image_no=-1; frames=[]; moves=[]; move_start=None
@@ -78,7 +96,7 @@ def build(path, name, dpi, yres, shifts):
         fr=frames[i]; a=np.frombuffer(data[i],dtype='<u2').astype(np.float64).reshape(fr['lines'],fr['pixels'],3)
         c=a[:,fr['pixels']//10:fr['pixels']-fr['pixels']//10]; lm=c.mean(1)
         return {'frame':i,'mean':[round(v,1) for v in c.mean((0,1))],
-                'lineCvPct':[round(v,3) for v in (lm.std(0)/lm.mean(0)*100)] if fr['lines']>1 else [0,0,0]}
+                'lineCvPct':[round(float(v),3) for v in np.nan_to_num(lm.std(0)/np.where(lm.mean(0)>0,lm.mean(0),np.inf)*100)] if fr['lines']>1 else [0,0,0]}
     line=next(i for i,fr in enumerate(frames) if fr['lines']==1 and fr['pixels']>5000)
     shading=[i for i,fr in enumerate(frames) if fr['lines']==128]
     white=max(shading,key=lambda i:np.frombuffer(data[i],dtype='<u2').mean())
@@ -97,10 +115,19 @@ def build(path, name, dpi, yres, shifts):
     for i,fr in enumerate(frames):
         got=sum(o['length'] for o in ops if o['kind']=='read' and o['frame']==i)
         assert i==main_frame or got==fr['bytes'], f'calibration frame {i} incomplete in the capture ({got} of {fr["bytes"]} B)'
-    return {'name':name,'source':pathlib.Path(path).name,'sha256':hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest(),
+    return {'name':name,'source':pathlib.Path(path).name+('' if sequence is None else f' (sequence {sequence})'),'sha256':hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest(),
             'dpi':dpi,'yres':yres,'shifts':shifts,'mainFrame':main_frame,'frames':frames,'moves':moves,'lamp':lamp,'scan':scan,'captureTruncatedBytes':max(0,truncated),'ops':ops}
 
-if __name__=='__main__':
+if __name__=='__main__' and sys.argv[1]=='--add':
+    key,name,dpi,yres,gb,cap=sys.argv[2:8]
+    path,_,seq=cap.partition('@')
+    prof=build(path,name,int(dpi),int(yres),[0]+[int(v) for v in gb.split(',')],int(seq) if seq else None)
+    dest=pathlib.Path(__file__).resolve().parents[1]/'capture_profiles.js'
+    text=dest.read_text(); head,_,body=text.partition('globalThis.CAPTURE_PROFILES=')
+    profiles=json.loads(body.rstrip().rstrip(';')); profiles[key]=prof
+    dest.write_text(head+'globalThis.CAPTURE_PROFILES='+json.dumps(profiles,separators=(',',':'))+';\n')
+    print(dest, dest.stat().st_size, key, len(prof['ops']),'ops, frames',len(prof['frames']),'main',prof['mainFrame'],'scan',prof['scan'])
+elif __name__=='__main__':
     profiles={'prescan':build(sys.argv[1],'Captured prescan',1440,2880,[0,10,19]),
               'full':build(sys.argv[2],'Captured full frame 3600',3600,7200,[0,24,48])}
     if len(sys.argv)>3: profiles['full7200']=build(sys.argv[3],'Captured full frame 7200',7200,14400,[0,48,96])
