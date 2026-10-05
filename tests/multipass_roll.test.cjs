@@ -18,15 +18,17 @@ const irb=frame((y,x,c)=>55000*Math.pow(scene(y-2,x,0)/15000,0.06)*dust[Math.max
 const lamp={dark:{mean:dk,noise:{mean:dk,tvar:[2400,2400,2400]}},shading:{mean:[57000,61000,60000],noise:{mean:[57000,61000,60000],tvar:[270000,240000,270000]}}};
 (async()=>{
   for(const mode of ['range','fusion']){
-    const saved=new Map(), logs=[];
+    const saved=new Map(), logs=[], steps=[];
     const settings={prefix:'mp_',digits:2,tiff:'aligned',pixels:'square',profile:'full',orientation:1,film:'neg',mirror:true,blackLevel:false,multiExposure:mode,meFactor:'3',infrared:mode==='range'?'repair':'detect'};
-    const rec=await Roll.scanFrame({settings,number:1,log:m=>logs.push(m),
+    const rec=await Roll.scanFrame({settings,number:1,log:m=>logs.push(m),progress:(label,f)=>steps.push([label,f]),
       acquire:async()=>({bytes:new Uint8Array(colour),profile,lamp,long:{bytes:new Uint8Array(long),profile,lamp,factor:3},ir:{bytes:new Uint8Array(irb),profile,lamp:{dark:{mean:[0,0,0]}}}}),
       makePreview:async(planes,g,s)=>({thumb:'t',large:s.film}),
       store:{exists:async()=>[],save:async(name,parts)=>{const b=Buffer.from(await new Blob(parts).arrayBuffer());saved.set(name,b);return {bytes:b.length};}}});
     const names=[...saved.keys()].sort();
     const side=JSON.parse(saved.get('mp_01.json'));
-    assert(names.includes('mp_01.tif')&&names.includes('mp_01_irmask.png'),'files: '+names);
+    assert(names.includes('mp_01.tif')&&!names.some(n=>/irmask/.test(n)),'files: '+names);
+    const ov=side.processing.infrared.overlay; assert(ov&&/^data:image\/png;base64,/.test(ov.png)&&ov.pixels>20&&ov.mode===(mode==='range'?'repair':'detect'),'overlay mask in the sidecar: '+JSON.stringify(ov&&{...ov,png:ov.png.slice(0,30)}));
+    assert(steps.length>3&&steps.at(-1)[1]===1&&steps.every((x,i)=>!i||x[1]>=steps[i-1][1]-1e-9),'progress rises to 100 %: '+steps.length);
     assert(!names.includes('mp_01_ir.tif'),'IR is a channel of the TIFF, not a separate file');
     { const t=saved.get('mp_01.tif'), dv=new DataView(t.buffer,t.byteOffset,t.byteLength), ifd=dv.getUint32(4,true), n=dv.getUint16(ifd,true), tags={};
       for(let i=0;i<n;i++){ const o=ifd+2+i*12; tags[dv.getUint16(o,true)]={count:dv.getUint32(o+4,true),v:dv.getUint16(o+8,true),off:dv.getUint32(o+8,true)}; }
@@ -39,6 +41,6 @@ const lamp={dark:{mean:dk,noise:{mean:dk,tvar:[2400,2400,2400]}},shading:{mean:[
     if(mode==='range'){ assert(ir.repair.filledDefects>=15,'defects filled: '+JSON.stringify(ir.repair)); assert.deepEqual(rec.enhanced,['ME','IR']); }
     else assert(me.fusion&&/positive/.test(me.fusion.output));
     const tif=saved.get('mp_01.tif'); assert(tif.length>P*370*6,'TIFF holds the frame');
-    console.log(`${mode}: ${names.join(', ')}; slopes ${me.fits.map(f=>f.slope).join('/')}; IR offset ${ir.registration.dy.toFixed(2)}/${ir.registration.dx.toFixed(2)}${ir.repair?`; ${ir.repair.filledDefects} defects filled`:''}`);
+    console.log(`${mode}: ${names.join(', ')}; progress ${[...new Set(steps.map(x=>x[0]))].join(' → ')}; slopes ${me.fits.map(f=>f.slope).join('/')}; IR offset ${ir.registration.dy.toFixed(2)}/${ir.registration.dx.toFixed(2)}${ir.repair?`; ${ir.repair.filledDefects} defects filled`:''}`);
   }
 })().catch(e=>{console.error(e);process.exit(1);});

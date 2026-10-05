@@ -144,6 +144,15 @@ If the event endpoint has errors, the page keeps retrying (it used to stop after
 
 Event support depends on the helper's USB backend: Linux (usbfs) and Windows with WinUSB read the interrupt endpoint; Windows with Plustek's usbscan driver and macOS report it as unavailable and keep the timed stop. Under plain WebUSB the browser reads it directly.
 
+## Loading a roll from its folder
+
+With the helper, the roll list is what is in the roll folder: on start, whenever the **Folder**
+changes, and when the window regains focus, the page reads the frame records (`<name>.json`) in
+that folder. Frames deleted on disk disappear from the list; frames copied in appear. When the
+folder is chosen, the roll name and digits are taken from its frame names and the next number
+moves past the last frame. Frames without a stored preview get one (and a thumbnail) from their
+TIFF, downsampled by the helper, one at a time in the background.
+
 ## Frame previews
 
 Selecting a saved frame shows a 2400 px preview (box-filtered from the full frame). These previews
@@ -260,9 +269,14 @@ exclusion of the film holder, then a mask. **Repair** fills compact defects by e
 (patch-based) inpainting from nearby film texture, which keeps the grain, and divides large faint
 defects by their IR transmission^γ (γ ≈ 0.6 measured). **Detect only** leaves the colour alone.
 Either way the registered infrared is saved as a **4th channel of the TIFF** (RGBI, 16-bit,
-ExtraSamples = unspecified, as in SilverFast's 64-bit HDRi files), with the defect mask as
-`_irmask.png`. Programs that only read RGB ignore the 4th channel; Photoshop shows it as an extra
-channel. B&W silver film and
+ExtraSamples = unspecified, as in SilverFast's 64-bit HDRi files). Programs that only read RGB
+ignore the 4th channel; Photoshop shows it as an extra channel. No separate mask file is written.
+
+While the extra passes are processed, the status line and progress bar show each step (aligning,
+finding dust and scratches, merging or fusing, repairing). **Show repairs** on the preview (or the
+R key) overlays what was repaired (detect only: what was found) in magenta with an amber halo; the
+preview-size mask is kept in the frame's JSON (`processing.infrared.overlay`), so it also works for
+frames loaded back from the folder. B&W silver film and
 Kodachrome block IR; that is detected and the frame is not repaired.
 
 Detection takes about 20 s per 3600 dpi frame, repair under 1 s. Settings are recorded in the

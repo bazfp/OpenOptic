@@ -343,6 +343,12 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/api/files/list":
 		handleFilesList(w, r)
 		return
+	case "/api/files/roll":
+		handleFilesRoll(w, r)
+		return
+	case "/api/files/preview":
+		handleFilesPreview(w, r)
+		return
 	case "/api/files/mkdir":
 		handleFilesMkdir(w, r)
 		return

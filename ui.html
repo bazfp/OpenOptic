@@ -33,7 +33,6 @@ aside{border-right:1px solid var(--line);padding:16px 18px 40px;overflow:auto}
   aside{min-height:0;overflow-y:auto;overscroll-behavior:contain}
   .stage{min-height:0;overflow:hidden}
   .viewer{min-height:0;overflow:hidden}
-  .viewer img,.viewer canvas.live{max-height:100%}
   .roll{height:26vh;max-height:none;flex:none}
   .log{height:26vh;flex:none}
   .details{max-height:16vh;overflow:auto;flex:none}
@@ -82,7 +81,13 @@ button.danger{border-color:var(--bad);color:var(--bad)}
 details summary{cursor:pointer;color:var(--ink2);font-size:13px}
 kbd{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--amber)}
 
-.viewer img,.viewer canvas.live{max-width:100%;max-height:70vh;background:#000;box-shadow:0 0 0 1px #2c323a}
+/* the preview and live canvas always fit the viewer box whole (letterboxed), whatever its size */
+.viewer img,.viewer canvas.live{position:absolute;inset:14px;width:calc(100% - 28px);height:calc(100% - 28px);object-fit:contain;background:transparent}
+@media (max-width:900px){.viewer{height:60vh}}
+.viewer img.overlay{pointer-events:none}
+.viewer .vbtn{position:absolute;left:18px;top:10px;z-index:2;font-size:12px;padding:4px 10px;border-radius:4px;background:rgba(15,18,21,.82);border:1px solid var(--line);color:var(--ink);cursor:pointer}
+.viewer .vbtn[aria-pressed=true]{border-color:var(--amber);color:var(--amber)}
+.viewer .vbtn kbd{font:10px "JetBrains Mono",monospace;color:var(--dim);margin-left:4px}
 .viewer .livetag{position:absolute;left:18px;top:12px;font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--amber)}
 .roll{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:10px;padding:12px 16px;border-top:1px solid var(--line);max-height:40vh;overflow:auto}
 .roll figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden;cursor:pointer}
@@ -181,7 +186,7 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
       <select id="meFactor"><option value="2">2× exposure</option><option value="3">3× exposure (as SilverFast)</option><option value="4">4× exposure</option></select></div>
     <div class="field"><label for="infrared">Infrared</label>
       <select id="infrared"><option value="off">off</option><option value="repair">dust &amp; scratch repair</option><option value="detect">detect only</option></select></div>
-    <div class="note"><b class="lead">Adds an infrared pass that finds dust and scratches: film dyes are transparent to IR, dirt isn’t.</b><ul><li><b>Repair</b> — small defects are filled from nearby film texture (grain kept); large faint marks are corrected by their IR density.</li><li><b>Detect only</b> — colour untouched, for repair in another program.</li><li><b>Always saved</b> — IR as the TIFF’s 4th channel (RGBI) and an <code>_irmask.png</code>.</li></ul><span class="foot"><span class="warn">Not for B&amp;W silver film or Kodachrome</span> (they block IR; detected and skipped). 3600 dpi only, adds ~55 s.</span></div>
+    <div class="note"><b class="lead">Adds an infrared pass that finds dust and scratches: film dyes are transparent to IR, dirt isn’t.</b><ul><li><b>Repair</b> — small defects are filled from nearby film texture (grain kept); large faint marks are corrected by their IR density.</li><li><b>Detect only</b> — colour untouched, for repair in another program.</li><li><b>Always saved</b> — IR as the TIFF’s 4th channel (RGBI).</li><li><b>See what changed</b> — <b>Show repairs</b> (or press R) on the preview marks every repaired spot.</li></ul><span class="foot"><span class="warn">Not for B&amp;W silver film or Kodachrome</span> (they block IR; detected and skipped). 3600 dpi only, adds ~55 s.</span></div>
     <div class="btnpair"><button id="bNextFree">Next free number</button><button id="bNewRoll">New roll…</button></div>
   </section>
 
@@ -234,6 +239,8 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
 <div class="stage">
   <div class="viewer" id="viewer">
     <img id="view" alt="" hidden>
+    <img id="overlay" class="overlay" alt="" hidden>
+    <button type="button" id="bOverlay" class="vbtn" hidden aria-pressed="false">Show repairs <kbd>R</kbd></button>
     <canvas id="live" class="live" hidden></canvas>
     <div class="livetag" id="liveTag" hidden></div>
     <div class="lamp" id="lampState">lamp off</div>
@@ -673,7 +680,7 @@ const defaults={dir:window.NATIVE_USB?.defaultDir?window.NATIVE_USB.defaultDir+s
   tiff:'aligned',pixels:'lanczos',profile:'full',jpeg:false,mirror:true,warm:1,keepLamp:true,lampCheck:'warn',blackLevel:true,pixelSampling:'deletion',multiExposure:'off',meFactor:'3',infrared:'off',dummyLines:'none',btn3:'scan',btn2:'preview'};
 let settings={...defaults}, records=[], pending=null, selected=null, rescan=null;
 try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s){ settings={...defaults,...s.settings}; records=s.records||[]; if(!s.v&&settings.warm===20) settings.warm=1; if((s.v||0)<3&&settings.dummyLines==='recorded') settings.dummyLines='none'; delete settings.exposureMultiplier; if((s.v||0)<4&&settings.pixels==='square') settings.pixels='lanczos'; } }catch(e){}   // 20 s was the old default
-function persist(){ if(dry) return; try{ localStorage.setItem(KEY,JSON.stringify({v:4,settings,records:records.map(({large,...r})=>r)})); }catch(e){ log('w','could not remember the roll list in this browser: '+e.message); } }
+function persist(){ if(dry) return; try{ localStorage.setItem(KEY,JSON.stringify({v:4,settings,records:records.map(({large,repairMask,previewFailed,...r})=>r)})); }catch(e){ log('w','could not remember the roll list in this browser: '+e.message); } }
 // sidebar notes: hidden behind an (i) beside the control they describe
 for(const p of document.querySelectorAll('aside .note')){
   const prev=p.previousElementSibling; if(!prev) continue;
@@ -713,7 +720,7 @@ const scanSecs=key=>scanPasses(key).reduce((a,[,t])=>a+t,0);
 const DPI_INFO={prescan:'Quick index scan: 1440 dpi, ~16 MB, ~16 s',full:'Full resolution: 3600 dpi, ~103 MB, ~80 s',full7200:'Maximum: 7200 dpi, ~411 MB, ~4 min, needs ~1.4 GB free memory'};
 const tifName=n=>{ try{ return (Roll.fileNames(settings,n).find(f=>f.kind==='tiff'||f.kind==='raw-tiff')||{name:safeBase(n)}).name; }catch(e){ return '—'; } };
 const safeBase=n=>{ try{ return Roll.baseName(settings.prefix,n,settings.digits); }catch(e){ return '—'; } };
-for(const [id] of bind) $(id).addEventListener('change',()=>{ fromUI(); if(id==='outDir') checkMissing(); if(id==='profileSel'&&settings.profile==='full7200') say('7200 dpi needs about 1.4 GB of free memory while the frame is processed.');
+for(const [id] of bind) $(id).addEventListener('change',()=>{ fromUI(); if(id==='outDir') syncFromFolder({adjust:true}); if(id==='profileSel'&&settings.profile==='full7200') say('7200 dpi needs about 1.4 GB of free memory while the frame is processed.');
   if(id==='film'||id==='orient'||id==='mirror') log('',`${{film:'film',orient:'orientation',mirror:'horizontal flip'}[id]} changed; applies to the next frame`); });
 $('prefix').addEventListener('input',()=>{ settings.prefix=$('prefix').value; refreshName(); });
 $('nextNo').addEventListener('input',()=>{ settings.next=parseInt($('nextNo').value||'0',10); rescan=null; refreshName(); });
@@ -750,11 +757,54 @@ const previewDB=(()=>{ let db=null;
     async del(r){ try{ await tx('readwrite',s=>s.delete(this.key(r))); }catch(e){} } }; })();
 let shownURL=null;
 async function showLarge(r){
-  if(r.large){ show(r.large); return; }
+  if(r.large){ show(r.large); showOverlay(r); return; }
   show(r.thumb);                                   // instant, then the sharp one
-  const blob=await previewDB.get(r); if(!blob||selected!==r) return;
-  if(shownURL) URL.revokeObjectURL(shownURL); shownURL=URL.createObjectURL(blob); show(shownURL);
+  let blob=await previewDB.get(r);
+  if(!blob&&selected===r){ try{ blob=await previewFromDisk(r); }catch(e){ log('w',`no preview for ${r.base}: ${e.message}`); } }
+  if(!blob||selected!==r){ if(selected===r) showOverlay(r); return; }
+  if(shownURL) URL.revokeObjectURL(shownURL); shownURL=URL.createObjectURL(blob); show(shownURL); showOverlay(r);
 }
+// Repair overlay: the preview-size mask from the sidecar, drawn at the size the preview is shown
+// (so a 2-pixel dust repair is still a visible mark): magenta where repaired, with an amber ring
+// a few screen pixels wide around each spot, rotated like the preview.
+let overlayOn=false; const maskCache=new Map();
+async function maskPixels(r){
+  const k=r.base+'|'+r.scanned; if(maskCache.has(k)) return maskCache.get(k);
+  const img=new Image(); img.src=r.repairMask.png; await img.decode();
+  const c=document.createElement('canvas'); c.width=img.width; c.height=img.height; const x=c.getContext('2d'); x.drawImage(img,0,0);
+  const d=x.getImageData(0,0,c.width,c.height).data, pts=[];
+  for(let i=0;i<c.width*c.height;i++) if(d[i*4]>127) pts.push(i);
+  const m={W:c.width,H:c.height,pts}; maskCache.set(k,m); if(maskCache.size>8) maskCache.delete(maskCache.keys().next().value); return m;
+}
+async function overlayURL(r){
+  const {W,H,pts}=await maskPixels(r);
+  const rot={1:0,6:90,3:180,8:-90}[r.orientation]||0, swap=Math.abs(rot)===90, iw=swap?H:W, ih=swap?W:H;
+  // the box object-fit:contain gives the preview inside the viewer, in device pixels
+  const v=$('view').getBoundingClientRect(), k=Math.min(v.width/iw,v.height/ih)*(devicePixelRatio||1);
+  const ow=Math.max(1,Math.round(iw*k)), oh=Math.max(1,Math.round(ih*k)), dpr=devicePixelRatio||1;
+  const c=document.createElement('canvas'); c.width=ow; c.height=oh; const x=c.getContext('2d');
+  const map=i=>{ const y=Math.floor(i/W), xx=i-y*W;      // mask pixel centre → rotated display coordinates
+    let u=xx+0.5, w=y+0.5; if(rot===90){ [u,w]=[H-w,u]; } else if(rot===-90){ [u,w]=[w,W-u]; } else if(rot===180){ u=W-u; w=H-w; } return [u*ow/iw,w*oh/ih]; };
+  const ring=Math.max(3,4*dpr), core=Math.max(1.5*dpr,k/2+0.5);
+  x.fillStyle='rgba(255,176,32,.45)'; x.beginPath(); for(const i of pts){ const [u,w]=map(i); x.moveTo(u+ring,w); x.arc(u,w,ring,0,2*Math.PI); } x.fill();
+  x.fillStyle='rgb(255,40,200)'; for(const i of pts){ const [u,w]=map(i); x.fillRect(u-core,w-core,2*core,2*core); }
+  return c.toDataURL('image/png');
+}
+async function showOverlay(r){
+  const b=$('bOverlay'), ov=$('overlay');
+  if(!r?.repairMask?.png||selected!==r||$('view').hidden){ b.hidden=true; ov.hidden=true; return; }
+  const what=r.repairMask.mode==='repair'?'repairs':'defects';
+  b.hidden=false; b.setAttribute('aria-pressed',String(overlayOn)); b.innerHTML=`${overlayOn?'Hide':'Show'} ${what} <kbd>R</kbd>`;
+  b.title=`${r.repairMask.mode==='repair'?'Infrared repairs':'Defects found by infrared (not repaired)'}: magenta = defect, amber halo marks where it is`;
+  if(!overlayOn){ ov.hidden=true; return; }
+  try{ if(!$('view').complete) await $('view').decode().catch(()=>{});
+    const url=await overlayURL(r); if(selected===r&&overlayOn&&url){ ov.src=url; ov.hidden=false; } }catch(e){ log('w','overlay: '+e.message); }
+}
+// redraw at the new size when the viewer changes size (window resize, panels)
+let overlayResize=null;
+new ResizeObserver(()=>{ if(!overlayOn||$('overlay').hidden) return; clearTimeout(overlayResize); overlayResize=setTimeout(()=>showOverlay(selected),150); }).observe($('viewer'));
+function toggleOverlay(){ if($('bOverlay').hidden) return; overlayOn=!overlayOn; showOverlay(selected); }
+$('bOverlay').onclick=toggleOverlay;
 function select(r){
   selected=r; showLarge(r);
   const d=$('details'); d.hidden=false;
@@ -772,6 +822,86 @@ function select(r){
 // frame can be dropped from the list (and from the roll record JSON). Files on disk are never deleted.
 let missing=new Set(), checkingMissing=false;
 const imageFiles=r=>{ const img=r.files.filter(f=>f.kind==='tiff'||f.kind==='raw-tiff'); return (img.length?img:r.files).map(f=>f.name); };
+// ---------------------------------------------------------------- the roll is what is in its folder
+// With the helper, the roll list is rebuilt from the frame sidecars (<base>.json) in the roll folder:
+// on start, when the folder changes, and when the window regains focus. Frames without a stored
+// preview get one from their TIFF (downsampled by the helper), one at a time in the background.
+function recordFromSidecar(sc,old){
+  const P=sc.processing||{}, me=P.multiExposure, ir=P.infrared;
+  return {number:sc.number,base:sc.frame,scanned:sc.scanned,film:sc.film||'neg',profile:sc.acquisition?.profile||'',
+    orientation:sc.orientation?.tiffTag||1,mirror:P.horizontalMirror?.applied!==false,
+    files:(sc.files||[]).map(({kind,name,bytes,sha256,width,height})=>({kind,name,bytes,sha256:sha256||null,width,height})),
+    shifts:P.channelShiftLines||[0,0,0],shiftConfidence:P.channelShiftConfidence||[1,0,0],lampWarning:sc.acquisition?.illuminationCheck?.warning||null,
+    enhanced:[me?'ME':null,ir?'IR':null].filter(Boolean),displayReferred:!!me?.fusion,repairMask:ir?.overlay||old?.repairMask||null,
+    thumb:old?.thumb||null,large:old?.large||null,status:'saved'};
+}
+let syncing=null;
+function syncFromFolder({adjust=false}={}){
+  if(!nativeFiles||dry||!settings.dir||pending||operationActive) return checkMissing();
+  return syncing||(syncing=(async()=>{
+    try{
+      const res=await api('/api/files/roll',{dir:settings.dir});
+      if(res.dir!==settings.dir.replace(/[\\/]+$/,'')&&res.dir!==settings.dir) return;      // folder changed meanwhile
+      const key=r=>r.base+'|'+r.scanned, had=new Map(records.map(r=>[key(r),r]));
+      const next=res.frames.map(sc=>recordFromSidecar(sc,had.get(sc.frame+'|'+sc.scanned)));
+      const before=new Set(had.keys()), after=new Set(next.map(key));
+      const changed=before.size!==after.size||[...after].some(k=>!before.has(k));
+      records=next; if(selected) selected=records.find(r=>key(r)===key(selected))||null;
+      if(adjust&&records.length){
+        // prefix and digits from the frame names, if the roll uses one; next number after the last
+        const m=records.map(r=>/^(.*?)(\d+)$/.exec(r.base)).filter(Boolean), pre=m[0]?.[1], dig=m[0]?.[2].length;
+        if(m.length===records.length&&m.every(x=>x[1]===pre&&x[2].length===dig)&&Roll.cleanPrefix(pre)===pre&&[2,3,4].includes(dig)&&(pre!==settings.prefix||dig!==settings.digits)){
+          log('ok',`roll name from the folder: ${pre} (${dig} digits)`); settings.prefix=pre; settings.digits=dig; rescan=null;
+        }
+        const last=Math.max(...records.map(r=>r.number));
+        if(settings.next<=last){ settings.next=last+1; rescan=null; }
+        toUI();
+      }
+      if(changed||adjust){
+        log(res.frames.length?'ok':'',res.exists?`roll folder: ${res.frames.length} frame${res.frames.length===1?'':'s'} found${res.skipped?` (${res.skipped} other JSON file${res.skipped===1?'':'s'} ignored)`:''}`:'roll folder does not exist yet; it is created with the first frame');
+        if(!selected){ $('details').hidden=true; if(!live) { $('view').hidden=true; $('hint').hidden=false; } }
+        persist(); renderRoll(); if(selected) select(selected);
+      }
+      queuePreviews();
+    }catch(e){ log('w','could not read the roll folder: '+e.message); }
+    finally{ syncing=null; }
+    await checkMissing();
+  })());
+}
+// A preview from the saved TIFF: 2400 px, rendered like a fresh scan's (inverted negative, levels,
+// orientation), kept in IndexedDB; the roll thumbnail comes from the same render.
+const previewJobs=new Map();
+function previewFromDisk(r){
+  const tif=r.files.find(f=>f.kind==='tiff'); if(!nativeFiles||dry||!tif) return Promise.resolve(null);
+  const k=previewDB.key(r); if(previewJobs.has(k)) return previewJobs.get(k);
+  const job=(async()=>{
+    const q=new URLSearchParams({dir:outFolder(),name:tif.name,max:'2400'});
+    const res=await fetch('/api/files/preview?'+q,{method:'POST',headers:{'X-Token':window.NATIVE_USB.token}});
+    if(!res.ok) throw new Error((await res.text()).trim()||('HTTP '+res.status));
+    const buf=await res.arrayBuffer(), dv=new DataView(buf), w=dv.getUint32(4,true), h=dv.getUint32(8,true);
+    if(new TextDecoder().decode(new Uint8Array(buf,0,4))!=='OFPV'||buf.byteLength!==12+w*h*6) throw new Error('bad preview data');
+    const planes=[0,1,2].map(c=>new Uint16Array(buf,12+c*w*h*2,w*h));
+    const pv=await makePreview(planes,{pixels:w,lines:h},{film:r.displayReferred?'display':r.film,orientation:r.orientation});
+    const blob=await (await fetch(pv.large)).blob();
+    try{ await previewDB.put(r,blob); }catch(e){}
+    if(!r.thumb){ r.thumb=pv.thumb; persist(); renderRoll(); }
+    return blob;
+  })();
+  previewJobs.set(k,job); job.finally(()=>previewJobs.delete(k)).catch(()=>{});
+  return job;
+}
+let previewQueueRunning=false;
+async function queuePreviews(){
+  if(previewQueueRunning) return; previewQueueRunning=true;
+  try{
+    for(;;){
+      const r=records.find(x=>!x.thumb&&!x.previewFailed&&!missing.has(x.number)&&x.files.some(f=>f.kind==='tiff')); if(!r||dry) break;
+      while(operationActive||pending) await sleep(1000);       // never compete with a scan
+      if(!records.includes(r)) continue;
+      try{ await previewFromDisk(r); }catch(e){ r.previewFailed=true; log('w',`no preview for ${r.base}: ${e.message}`); }
+    }
+  }finally{ previewQueueRunning=false; }
+}
 async function checkMissing(){
   if(!nativeFiles||dry||!records.length||!settings.dir||checkingMissing){ if(missing.size&&(!records.length||dry)){ missing=new Set(); renderRoll(); } return; }
   checkingMissing=true;
@@ -801,7 +931,7 @@ async function removeRecords(numbers){
     catch(e){ log('w','roll record not updated: '+e.message); }
   }
 }
-function show(src){ const v=$('view'); if(src){ v.src=src; v.hidden=false; $('hint').hidden=true; $('live').hidden=true; $('liveTag').hidden=true; } }
+function show(src){ const v=$('view'); if(src){ v.src=src; v.hidden=false; $('hint').hidden=true; $('live').hidden=true; $('liveTag').hidden=true; } $('overlay').hidden=true; $('bOverlay').hidden=true; }
 
 // ---------------------------------------------------------------- live preview while scanning
 // The frame is drawn line by line as the scanner delivers it (CaptureRuntime.livePreview), with the
@@ -860,7 +990,8 @@ async function acquireJob(key,snap){
   if(x.me){ const f=Number(snap.meFactor)||3; const r=await acquire(key,{...snap,exposureMultiplier:f},{liveLabel:lbl(`${f}× exposure`),noise:true}); job.long={bytes:r.bytes,profile:r.profile,lamp:r.lamp,factor:f}; }
   return job;
 }
-function ctxFor(number,overwrite){ const snapshot={...settings}; return {settings:snapshot,number,overwrite,store,acquire:key=>acquireJob(key,snapshot),makePreview,previewJpeg,log:m=>log('ok',m)}; }
+function ctxFor(number,overwrite){ const snapshot={...settings}; return {settings:snapshot,number,overwrite,store,acquire:key=>acquireJob(key,snapshot),makePreview,previewJpeg,log:m=>log('ok',m),
+  progress:(label,f)=>{ say(`${label}… ${Math.round(f*100)} %`,'busy'); progress(f); if(f>=1) setTimeout(()=>progress(0),400); }}; }
 function checkReady(){
   if(!settings.dir&&nativeFiles) throw new Error('Choose a folder for this roll first.');
   if(nativeFiles&&!/^([A-Za-z]:[\\/]|\\\\|\/)/.test(settings.dir)) throw new Error('The folder must be a full path, e.g. '+(sep==='\\'?'C:\\Scans\\Roll001':'/home/me/Scans/Roll001'));
@@ -939,7 +1070,7 @@ function pkClose(){ if(dlg.open) typeof dlg.close==='function'?dlg.close():dlg.r
 function pkUse(path){
   path=(path||'').trim();
   if(!/^([A-Za-z]:[\\/]|\\\\|\/)/.test(path)){ $('pkInfo').textContent='Enter a full path, or pick a folder from the list.'; return; }
-  settings.dir=path; $('outDir').value=path; fromUI(); pkClose(); log('ok','roll folder: '+path); refreshName(); checkMissing();
+  settings.dir=path; $('outDir').value=path; fromUI(); pkClose(); log('ok','roll folder: '+path); refreshName(); syncFromFolder({adjust:true});
   say(`Folder set: ${path}`);
 }
 $('bChoose').onclick=()=>{
@@ -983,7 +1114,7 @@ function leaveDryRun(){
   dry=false; try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); settings={...defaults,...(s?.settings||{})}; records=s?.records||[]; }catch(e){}
   selected=null; rescan=null; $('details').hidden=true; $('view').hidden=true; $('hint').hidden=false; toUI(); renderRoll();
   $('bDry').textContent='Dry run (no scanner)'; $('devline').textContent='no scanner connected';
-  log('','dry run ended'); say('Dry run ended. Press Connect scanner to use the real scanner.'); checkMissing();
+  log('','dry run ended'); say('Dry run ended. Press Connect scanner to use the real scanner.'); syncFromFolder({adjust:true});
 }
 $('bDry').onclick=guard(async()=>{ if(pending){ throw new Error('Save or discard the unsaved frame first.'); } if(dry) return leaveDryRun(); dry=true; connected=false; records=[]; selected=null; rescan=null; settings.next=1; toUI(); renderRoll(); $('details').hidden=true; $('devline').innerHTML='<span class="dry">DRY RUN</span> simulated scanner: files are real, images are synthetic'; log('w','dry run: simulated scanner'); say(`Dry run ready: synthetic frames are saved to ${nativeFiles?outFolder():'browser downloads'}. Your roll list and counter are untouched; press End dry run to return to them.`); $('bDry').textContent='End dry run'; });
 $('bScan').onclick=guard(()=>(connected||dry)?scanAndSave():connectScanner());
@@ -1047,12 +1178,13 @@ document.addEventListener('keydown',e=>{
   if(dlg.open||e.target?.closest?.('input,select,textarea,dialog')||e.ctrlKey||e.metaKey||e.altKey) return;
   if(e.code==='Space'&&!$('bScan').disabled){ e.preventDefault(); $('bScan').click(); }
   else if(e.key==='p'&&!$('bPreview').disabled){ e.preventDefault(); $('bPreview').click(); }
+  else if(e.key==='r'){ e.preventDefault(); toggleOverlay(); }
 });
 addEventListener('beforeunload',e=>{ if(pending||operationActive){ e.preventDefault(); e.returnValue=''; } });
 
-toUI(); renderRoll(); enableScan(); checkMissing();
-addEventListener('focus',()=>{ if(!operationActive) checkMissing(); });
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&!operationActive) checkMissing(); });
+toUI(); renderRoll(); enableScan(); syncFromFolder({adjust:true});
+addEventListener('focus',()=>{ if(!operationActive) syncFromFolder(); });
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&!operationActive) syncFromFolder(); });
 if(!nativeFiles) log('w','Not running under the opticfilm helper: files go to the browser\'s Downloads folder and existing files cannot be checked.');
 log('',`roll ${settings.prefix} · next ${safeBase(settings.next)} · folder ${settings.dir||'(browser downloads)'}`);
 
