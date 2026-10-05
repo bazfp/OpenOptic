@@ -14,7 +14,7 @@ const guards=html.slice(html.indexOf('function enableScan()'),html.indexOf("asyn
     checkCancel:()=>{},sleep:async()=>{},performance:{now:()=>0},window:{},
     status:async()=>{hardware++;return 8;},home:async()=>{hardware++;},
     stopMotor:async()=>{hardware++;},warmIfNeeded:async()=>{hardware++;},
-    positionKnown:true,lampOnAt:null};
+    positionKnown:true,lampOnAt:null,gpioPoll:{busy:null}};
   vm.createContext(context);vm.runInContext(acquisition+guards,context);
   await vm.runInContext("guard(()=>acquire('prescan'))()",context);
   assert.equal(hardware,0,'staged exposure must not touch hardware, including guard cleanup');

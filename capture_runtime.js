@@ -94,6 +94,30 @@
     const out=[]; for(let j=0;j<data.length;j+=2){ if(data[j]===0x0f) out.push(...extra); out.push(data[j],data[j+1]); } return out;
   }
 
+  // The iSRD capture's infrared job begins while SilverFast's carriage is still returning from the
+  // colour pass: before the job's first motor start the vendor polls status (0x41) hundreds of
+  // times with MOTORENB set. Replayed literally against a parked carriage that is ~17 s of idling.
+  // Each run of identical set-address/ack/read triplets with MOTORENB expected, before the first
+  // motor start, becomes one triplet whose read waits only while the motor is actually running.
+  function collapseRecordedWaits(src){
+    const isStart=o=>o.kind==='control'&&writesMotorStart(o);
+    const first=src.findIndex(isStart); if(first<0) return src;
+    const triplet=i=>{ const a=src[i],b=src[i+1],c=src[i+2];
+      return a&&b&&c&&a.kind==='control'&&a.rt===0x40&&a.value===0x83&&a.data.length===1&&a.data[0]===STATUS&&
+        b.kind==='control'&&b.rt===0xc0&&b.value===0x8e&&b.index===0x20&&
+        c.kind==='control'&&c.rt===0xc0&&c.value===0x84&&c.register===STATUS&&c.expected&&(c.expected[0]&MOTORENB)?c.expected[0]:null; };
+    const out=[]; let i=0;
+    while(i<src.length){
+      const e=i<first?triplet(i):null;
+      if(e===null){ out.push(src[i]); i++; continue; }
+      let n=1; while(i+3*n<first&&triplet(i+3*n)===e) n++;
+      if(n<5){ for(let k=0;k<3*n;k++) out.push(src[i+k]); }
+      // expected: what a parked scanner reports (the recorded value without MOTORENB)
+      else out.push(src[i],src[i+1],{...src[i+2],expected:[e&~MOTORENB],recordedWhileMoving:e,waitMotorIdle:n});
+      i+=3*n;
+    }
+    return out.length===src.length?src:out;
+  }
   async function run(profile, io, hooks={}) {
     // Validate before touching hardware: capture loss must never move image reads past
     // transfer completion or scan/lamp shutdown. Byte totals alone cannot catch that.
@@ -114,6 +138,7 @@
     }
     for(let i=0;i<profile.frames.length;i++)
       assert(planned.get(i)===profile.frames[i].bytes,'Invalid capture profile: incomplete frame '+i);
+    const ops=collapseRecordedWaits(profile.ops);
     const regs={}, frames=new Map(); let address=0, lastStatus=null, moveStartedAt=null, moveEvents=null;
     const lampFrames=profile.lamp?[profile.lamp.line.frame,profile.lamp.shading.frame,profile.lamp.dark.frame]:[];
     const check=hooks.check||(()=>{}), sleep=hooks.sleep||(ms=>new Promise(r=>setTimeout(r,ms)));
@@ -172,6 +197,13 @@
         while(r[0]&0x0c){check();assert(now()<deadline,'Bulk completion timeout');await sleep(20);r=await readIn(op);}
         return;
       }
+      // A recorded wait for a move from before this sequence (collapsed): wait only if the motor
+      // really is running, instead of replaying hundreds of polls against a parked carriage.
+      if(op.waitMotorIdle){
+        if(r[0]&MOTORENB) await pollStatus(op,r,MOTORENB,0,'waiting for the previous move to finish');
+        log(`skipped the recorded wait for a previous move (${op.waitMotorIdle} status polls): motor ${r[0]&MOTORENB?'stopped after waiting':'already idle'}`);
+        return;
+      }
       // op.register is the address in force when the vendor issued this read.
       if(op.value===0x84&&op.register===STATUS){
         const expected=op.expected[0];
@@ -181,7 +213,7 @@
           await pollStatus(op,r,BUFEMPTY,0,'waiting for scan data');
       }
     };
-    for(const op of profile.ops){
+    for(const op of ops){
       check();
       if(op.kind==='delay'){
         if(op.timedStop){
@@ -614,5 +646,5 @@
     return buf;
   }
 
-  globalThis.CaptureRuntime={noiseStats,noiseModel,CALIBRATED_SHIFTS,livePreview,prepareProfile,SCAN_LINE_SETTINGS:['recorded','fewer','none'],run,geometry,measureShifts,decode,levels,renderRGB,alignedFrame,previewPlanes,tiffHeader,renderPreview,whiteStats,lampVerdict,darkVerdict,LAMP_LIMITS};
+  globalThis.CaptureRuntime={collapseRecordedWaits,noiseStats,noiseModel,CALIBRATED_SHIFTS,livePreview,prepareProfile,SCAN_LINE_SETTINGS:['recorded','fewer','none'],run,geometry,measureShifts,decode,levels,renderRGB,alignedFrame,previewPlanes,tiffHeader,renderPreview,whiteStats,lampVerdict,darkVerdict,LAMP_LIMITS};
 })();
