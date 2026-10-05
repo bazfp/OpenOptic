@@ -81,6 +81,19 @@ GPIO1-4 as "hot key" inputs latched until read; this scanner sets GPIO1-7 as inp
 
 ---
 
+**Colour-film captures (multi-exposure, iSRD).** Two further 3600 dpi captures confirm the
+sequence above and add three facts; details in `CAPTURE_FINDINGS_COLOUR_ME_IR.md`:
+
+- **Longer exposure** is LPERIOD alone: the vendor's multi-exposure main scan uses LPERIOD 42,000
+  (3×, 16.8 ms), LINESEL 0, scan-table cruise 21,000 (still 2 steps per line) and BUFSEL
+  (0x20) 0x08 instead of 0x10, with calibration left at 1×. Signal scales linearly (3.0×).
+- **Infrared**: white LED off (0x03 bit 4 = 0) and **GPIO27 high (0xA8 = 0x27)** turns on the IR
+  LED; the IR dark frame uses 0xA8 = 0x23. The IR job is a complete second sequence with its own
+  calibration (AFE gain ~0x37–0x3A, offsets ~0). Successive passes land 2–3 raw lines apart.
+- **RAMADDR (0x29–0x2B)** is set to 0 before each shading upload.
+
+---
+
 ## 2. Status registers
 
 ### 0x41 — main status
