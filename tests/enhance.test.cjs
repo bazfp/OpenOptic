@@ -76,6 +76,19 @@ const expose=(k,o,d)=>{ const a=new Uint16Array(W*H*3);
   let touched=0; for(let i=0;i<W*H;i++) if(!rep.mask[i]) for(let c=0;c<3;c++) if(repaired[i*3+c]!==colour[i*3+c]) touched++;
   assert.equal(touched,0,'nothing outside the mask changes');
   console.log(`infrared: registered ${det.registration.dy.toFixed(2)}/${det.registration.dx.toFixed(2)} (true 1.2/0.7), ghost ${det.ghost} (true 0.06), found ${hit}/${defects} defect px; repair log error ${e0.toFixed(3)} -> ${e1.toFixed(3)} (${rep.attenuated} divided, ${rep.inpainted} inpainted: ${rep.method})`);
+  // real-scan lessons: an IR-only mark (no trace in colour) is left alone; a long faint scratch
+  // (IR 0.93, larger than the old 4000-px fill limit) is found along its length and filled
+  { const col=Uint16Array.from(clean), irT=new Float32Array(W*H).fill(1);
+    for(let y=200;y<214;y++) for(let x=100;x<114;x++) if((y-207)**2+(x-107)**2<=36) irT[y*W+x]=0.93;          // IR-only blob
+    for(let x=40;x<600;x++) for(let k=0;k<9;k++){ const y=Math.round(330+x*0.15)+k-4; irT[y*W+x]=Math.min(irT[y*W+x],0.93+Math.abs(k-4)*0.01); // 9-px IR band
+      if(Math.abs(k-4)<=1) for(let c=0;c<3;c++){ const j=(y*W+x)*3+c; col[j]=Math.round((clean[j]-dark[c])*0.7+dark[c]); } }               // 3-px visible line
+    const irv=new Uint16Array(W*H); for(let i=0;i<W*H;i++) irv[i]=Math.max(0,Math.min(FS,Math.round(55000*Math.pow((clean[i*3]-dark[0])/16000,0.06)*irT[i]+gauss()*25)));
+    const d2=Enhance.irDetect(irv,col,W,H,{darkC:dark}), fixed=Uint16Array.from(col), r2=Enhance.irRepair(fixed,W,H,d2);
+    let blobTouched=0; for(let y=200;y<214;y++) for(let x=100;x<114;x++) for(let c=0;c<3;c++) if(fixed[(y*W+x)*3+c]!==col[(y*W+x)*3+c]) blobTouched++;
+    let e0=0,e1=0,n=0; for(let x=60;x<580;x++){ const y=Math.round(330+x*0.15); for(let c=0;c<3;c++){ const j=(y*W+x)*3+c; e0+=Math.abs(Math.log(col[j]+64)-Math.log(clean[j]+64)); e1+=Math.abs(Math.log(fixed[j]+64)-Math.log(clean[j]+64)); n++; } }
+    assert.equal(blobTouched,0,'IR-only mark left alone'); assert(r2.invisible>=1,'counted as invisible');
+    assert(e1<e0*0.35,`long faint scratch repaired along its length: ${(e0/n).toFixed(3)} -> ${(e1/n).toFixed(3)}`);
+    console.log(`infrared, real-scan cases: IR-only mark untouched (${r2.invisible} skipped), 9-px-band scratch (IR 0.93) filled: error ${(e0/n).toFixed(3)} -> ${(e1/n).toFixed(3)}, ${r2.dividedComponents} divided`); }
   // silver film: IR shows the image itself
   const silver=new Uint16Array(W*H); for(let i=0;i<W*H;i++) silver[i]=Math.round(60000*Math.pow((clean[i*3]-dark[0])/30000,0.9));
   assert(Enhance.irDetect(silver,colour,W,H,{darkC:dark}).irBlocked,'IR-blocking (silver) film is detected');

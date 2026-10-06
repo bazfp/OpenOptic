@@ -215,3 +215,25 @@ pass processed in stripes as it arrives; that is phase 6.
   per-channel levels before fusing; gamma-encoded blend, decoded to a linear negative TIFF. The
   first version fused inverted, levelled positives and saved a display-referred positive, which
   took the inversion and colour balance away from the negative converter.
+
+## 10. Infrared repair, revised on the real captures
+
+Graded on both iSRD captures (Kodak Gold, Lucky) with per-defect residuals and crops:
+
+- **Detection** used a fixed IR transmission cut (t < 0.9). Real hairline scratches and dust sit
+  at t ≈ 0.92–0.95, 8–15σ above the IR noise (σ ≈ 0.004–0.006 on a 3×3 mean) yet above the cut,
+  so whole scratches were missed. Now hysteresis: seeds 5σ (≥ 2 %) below the clean level, grown
+  through neighbours 2.5σ (≥ 1 %) below it.
+- **Visibility gate**: a quarter of the IR marks do not show in the colour image (soft rings of
+  dust off the film plane). They are left alone. Visibility is v = closing(log colour) − log
+  colour, which ignores edges larger than the closing; a ring-vs-inside mean test was fooled by
+  the frame border and filled black into the picture.
+- **Hole = visible damage**: the IR footprint is wider and softer than the visible mark (10-px IR
+  band for a 2-px scratch), so only pixels with v above the grain (median + 3 MAD) or near-opaque
+  IR are filled; broad smudges (≥ 13 px across) keep their whole footprint.
+- **Routing by width**: the area rule (> 4000 px → divide by t^γ) sent long scratches and fibre
+  webs to a correction that barely changes them. Now everything is inpainted except broad
+  smudges over 20,000 px.
+- Result: ~480 (Gold) and ~340 (Lucky) defects repaired; repaired areas within the grain for
+  98–99 % by the residual measure; scratches, hairs, fibre webs and smudges removed (crops in
+  ir-repair-real-scans.png). Repair now takes ~10 s per 3600 dpi frame (detection ~23 s).

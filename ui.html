@@ -200,7 +200,7 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
       <select id="meFactor"><option value="2">2× exposure</option><option value="3">3× exposure (as SilverFast)</option><option value="4">4× exposure</option></select></div>
     <div class="field"><label for="infrared">Infrared</label>
       <select id="infrared"><option value="off">off</option><option value="repair">dust &amp; scratch repair</option><option value="detect">detect only</option></select></div>
-    <div class="note"><b class="lead">Adds an infrared pass that finds dust and scratches: film dyes are transparent to IR, dirt isn’t.</b><ul><li><b>Repair</b> — small defects are filled from nearby film texture (grain kept); large faint marks are corrected by their IR density.</li><li><b>Detect only</b> — colour untouched, for repair in another program.</li><li><b>Always saved</b> — IR as the TIFF’s 4th channel (RGBI).</li><li><b>See what changed</b> — <b>Show repairs</b> (or press R) on the preview marks every repaired spot.</li></ul><span class="foot"><span class="warn">Not for B&amp;W silver film or Kodachrome</span> (they block IR; detected and skipped). 3600 dpi only, adds ~55 s.</span></div>
+    <div class="note"><b class="lead">Adds an infrared pass that finds dust and scratches: film dyes are transparent to IR, dirt isn’t.</b><ul><li><b>Repair</b> — defects that show in the picture are filled from nearby film texture (grain kept), scratches along their whole length; marks only the infrared sees are left alone.</li><li><b>Detect only</b> — colour untouched, for repair in another program.</li><li><b>Always saved</b> — IR as the TIFF’s 4th channel (RGBI).</li><li><b>See what changed</b> — <b>Show repairs</b> (or press R) on the preview marks every repaired spot.</li></ul><span class="foot"><span class="warn">Not for B&amp;W silver film or Kodachrome</span> (they block IR; detected and skipped). 3600 dpi only, adds ~55 s.</span></div>
     <div class="btnpair"><button id="bNextFree">Next free number</button><button id="bNewRoll">New roll…</button></div>
   </section>
 
@@ -872,7 +872,7 @@ function recordFromSidecar(sc,old){
     orientation:sc.orientation?.tiffTag||1,mirror:P.horizontalMirror?.applied!==false,
     files:(sc.files||[]).map(({kind,name,bytes,sha256,width,height})=>({kind,name,bytes,sha256:sha256||null,width,height})),
     shifts:P.channelShiftLines||[0,0,0],shiftConfidence:P.channelShiftConfidence||[1,0,0],lampWarning:sc.acquisition?.illuminationCheck?.warning||null,
-    enhanced:[me?'ME':null,ir?'IR':null].filter(Boolean),displayReferred:!!me?.fusion&&/positive/.test(me.fusion.output||''),   // fused positives from earlier versionsrepairMask:ir?.overlay||old?.repairMask||null,
+    enhanced:[me?'ME':null,ir?'IR':null].filter(Boolean),displayReferred:!!me?.fusion&&/positive/.test(me.fusion.output||''),/* fused positives from earlier versions */repairMask:ir?.overlay||old?.repairMask||null,
     thumb:old?.thumb||null,large:old?.large||null,status:'saved'};
 }
 let syncing=null;

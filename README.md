@@ -284,9 +284,22 @@ Adds a third, complete infrared sequence (white LED off, IR LED on via GPIO27, a
 SilverFast's iSRD). Colour dyes are transparent to IR, so dust, hair and scratches are the only
 dark marks. Processing: registration of the IR pass on the defects themselves (the pass lands
 1–2.5 lines off), removal of the faint cyan-dye ghost (log IR ≈ 0.06·log R), a transmission map,
-exclusion of the film holder, then a mask. **Repair** fills compact defects by exemplar
-(patch-based) inpainting from nearby film texture, which keeps the grain, and divides large faint
-defects by their IR transmission^γ (γ ≈ 0.6 measured). **Detect only** leaves the colour alone.
+exclusion of the film holder, then detection by hysteresis against the scan's own IR noise (seeds
+5σ below the clean level, grown through neighbours 2.5σ below it), so hairline scratches at
+92–95 % IR transmission are found along their whole length. **Repair** then:
+
+- leaves alone IR marks that do not show in the colour image (dust off the film plane, rings from
+  out-of-focus specks: typically a quarter of what the IR sees), measured with a morphological
+  closing so a strong edge such as the frame border never counts as a defect;
+- fills only the visibly damaged pixels of each defect (the whole footprint for broad smudges),
+  by exemplar (patch-based) inpainting from nearby film texture, which keeps the grain; thin
+  defects are filled however long they are;
+- divides only very large broad smudges by their IR transmission^γ.
+
+Tested on your Kodak Gold and Lucky iSRD captures: ~480 and ~340 defects repaired, residual
+contrast of the repaired areas within the grain for 92–98 % of them. **Detect only** leaves the colour alone.
+B&W silver film and Kodachrome block IR; that is detected and the frame is not repaired.
+
 Either way the registered infrared is saved as a **4th channel of the TIFF** (RGBI, 16-bit,
 ExtraSamples = unspecified, as in SilverFast's 64-bit HDRi files). Programs that only read RGB
 ignore the 4th channel; Photoshop shows it as an extra channel. No separate mask file is written.
@@ -295,10 +308,9 @@ While the extra passes are processed, the status line and progress bar show each
 finding dust and scratches, merging or fusing, repairing). **Show repairs** on the preview (or the
 R key) overlays what was repaired (detect only: what was found) in magenta with an amber halo; the
 preview-size mask is kept in the frame's JSON (`processing.infrared.overlay`), so it also works for
-frames loaded back from the folder. B&W silver film and
-Kodachrome block IR; that is detected and the frame is not repaired.
+frames loaded back from the folder.
 
-Detection takes about 20 s per 3600 dpi frame, repair under 1 s. Settings are recorded in the
+Detection takes about 23 s per 3600 dpi frame and repair about 10 s (shown with a progress bar). Settings are recorded in the
 sidecar under `processing.multiExposure` and `processing.infrared`; the roll list shows ME and IR
 badges. Neither works with “raw USB only” TIFFs.
 
