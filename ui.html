@@ -184,7 +184,7 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
 <aside>
   <section>
     <h2>Roll</h2>
-    <div class="field"><label for="prefix">Roll name</label><input type="text" id="prefix" spellcheck="false"></div>
+    <div class="field"><label for="prefix">File prefix</label><input type="text" id="prefix" spellcheck="false"></div>
     <div class="field"><label for="outDir">Folder</label><div class="inline"><input type="text" id="outDir" spellcheck="false"><button id="bChoose">Choose…</button></div></div>
     <div class="field"><label for="nextNo">Number</label><div class="inline"><input type="number" id="nextNo" min="0" max="999999"><select id="digits" aria-label="Number digits" style="width:auto"><option value="2">01</option><option value="3">001</option><option value="4">0001</option></select></div></div>
     <div class="field"><span class="small">Next file</span><span class="next" id="nextName"></span></div>
@@ -699,13 +699,15 @@ const store={
 // ---------------------------------------------------------------- settings and records (survive a page reload)
 const KEY='opticfilm.roll.v1';
 const sep=(window.NATIVE_USB?.defaultDir||'').includes('\\')?'\\':'/';
-const defaults={dir:window.NATIVE_USB?.defaultDir?window.NATIVE_USB.defaultDir+sep+'Roll':'',prefix:'Roll_',next:1,digits:2,film:'neg',orientation:1,
+// a roll is a folder named by its date (2026-10-06); the frames in it keep the file prefix (Roll_01.tif …)
+const today=()=>{ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+const defaults={dir:window.NATIVE_USB?.defaultDir?window.NATIVE_USB.defaultDir+sep+today():'',prefix:'Roll_',next:1,digits:2,film:'neg',orientation:1,
   tiff:'aligned',pixels:'lanczos',profile:'full',jpeg:false,mirror:true,warm:1,keepLamp:true,lampCheck:'warn',blackLevel:true,pixelSampling:'deletion',multiExposure:'off',meFactor:'3',infrared:'off',dummyLines:'none',btn3:'scan',btn2:'preview'};
 let settings={...defaults}, records=[], pending=null, selected=null, rescan=null;
 try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s){ settings={...defaults,...s.settings}; records=s.records||[]; if(!s.v&&settings.warm===20) settings.warm=1; if((s.v||0)<3&&settings.dummyLines==='recorded') settings.dummyLines='none'; delete settings.exposureMultiplier; if((s.v||0)<4&&settings.pixels==='square') settings.pixels='lanczos';
-    // the old untouched default roll name (Roll001_ in …/Roll001) becomes the plain one, unless it holds frames
-    if((s.v||0)<5&&settings.prefix==='Roll001_'&&!records.length&&(!window.NATIVE_USB?.defaultDir||settings.dir===window.NATIVE_USB.defaultDir+sep+'Roll001')){ settings.prefix=defaults.prefix; settings.dir=defaults.dir; } } }catch(e){}   // 20 s was the old default
-function persist(){ if(dry) return; try{ localStorage.setItem(KEY,JSON.stringify({v:5,settings,records:records.map(({large,repairMask,previewFailed,...r})=>r)})); }catch(e){ log('w','could not remember the roll list in this browser: '+e.message); } }
+    // an untouched old default (Roll001_ in …/Roll001, or Roll_ in …/Roll) with no frames moves to today's dated roll
+    if((s.v||0)<6&&!records.length&&[['Roll001_','Roll001'],['Roll_','Roll']].some(([p,f])=>settings.prefix===p&&(!window.NATIVE_USB?.defaultDir||settings.dir===window.NATIVE_USB.defaultDir+sep+f))){ settings.prefix=defaults.prefix; settings.dir=defaults.dir; } } }catch(e){}   // 20 s was the old default
+function persist(){ if(dry) return; try{ localStorage.setItem(KEY,JSON.stringify({v:6,settings,records:records.map(({large,repairMask,previewFailed,...r})=>r)})); }catch(e){ log('w','could not remember the roll list in this browser: '+e.message); } }
 // sidebar notes: hidden behind an (i) beside the control they describe
 for(const p of document.querySelectorAll('aside .note')){
   const prev=p.previousElementSibling; if(!prev) continue;
@@ -899,6 +901,8 @@ function syncFromFolder({adjust=false}={}){
         if(settings.next<=last){ settings.next=last+1; rescan=null; }
         toUI();
       }
+      // the next number must not be one the folder already uses (frames copied in, or scanned elsewhere)
+      if(!adjust&&rescan===null&&records.some(r=>r.number===settings.next)){ const used=new Set(records.map(r=>r.number)); let n=settings.next; while(used.has(n)) n++; settings.next=n; toUI(); persist(); log('',`next number moved to ${n}: the folder already has that frame`); }
       if(changed||adjust){
         log(res.frames.length?'ok':'',res.exists?`roll folder: ${res.frames.length} frame${res.frames.length===1?'':'s'} found${res.skipped?` (${res.skipped} other JSON file${res.skipped===1?'':'s'} ignored)`:''}`:'roll folder does not exist yet; it is created with the first frame');
         if(!selected){ $('details').hidden=true; if(!live) { $('view').hidden=true; $('hint').hidden=false; } }
@@ -1216,13 +1220,21 @@ $('bMonitor').onclick=guard(monitorButtons);
 $('bHome').onclick=guard(async()=>{ await home(); say('Carriage parked.'); });
 $('bLamp').onclick=guard(async()=>{ await lampSet(lampOnAt===null); });
 $('bNextFree').onclick=guard(async()=>{ fromUI(); checkReady(); rescan=null; settings.next=await Roll.nextFree(store,settings,settings.next); toUI(); persist(); say(`Next free number: ${safeBase(settings.next)}`); });
-$('bNewRoll').onclick=()=>{
+// New roll: a new folder beside the current one, named by today's date (-2, -3 … if that roll
+// already has frames). The file prefix and numbering restart at 01 in it.
+$('bNewRoll').onclick=async()=>{
   if(pending){ alert('Save or discard the unsaved frame first.'); return; }
-  const name=prompt('Roll name for the new roll (files become <prefix>01.tif, <prefix>02.tif …):',settings.prefix.replace(/\d+(\D*)$/,m=>String(parseInt(m,10)+1).padStart(m.match(/^\d+/)[0].length,'0')+m.replace(/^\d+/,'')));
-  if(!name) return; const clean=Roll.cleanPrefix(name); if(!clean){ alert('That prefix has no usable characters.'); return; }
-  settings.prefix=clean; settings.next=1; rescan=null;
-  if(window.NATIVE_USB?.defaultDir&&confirm(`Also use a new folder?\n\n${window.NATIVE_USB.defaultDir}${sep}${clean.replace(/[_\-. ]+$/,'')}`)) settings.dir=window.NATIVE_USB.defaultDir+sep+clean.replace(/[_\-. ]+$/,'');
-  records=[]; selected=null; $('details').hidden=true; $('view').hidden=true; $('hint').hidden=false; toUI(); persist(); renderRoll(); say(`New roll ${clean}. Load frame 1 and press Space.`);
+  if(operationActive){ say('Wait for the current scan to finish first.','err'); return; }
+  const parent=(settings.dir||'').replace(/[\\/]+$/,'').replace(/[\\/][^\\/]*$/,'')||window.NATIVE_USB?.defaultDir||'';
+  let suggest=today();
+  if(folderMode()&&parent){ for(let n=2;n<100;n++){ try{ const r=await api('/api/files/roll',{dir:parent+sep+suggest}); if(!r.exists||!r.frames.length) break; }catch(e){ break; } suggest=today()+'-'+n; } }
+  const name=prompt(`Name for the new roll${folderMode()?' (its folder, in '+parent+')':''}. Frames keep their file names: ${Roll.baseName(settings.prefix,1,settings.digits)}.tif, ${Roll.baseName(settings.prefix,2,settings.digits)}.tif …`,suggest);
+  if(!name) return; const clean=Roll.cleanPrefix(name).replace(/[_\-. ]+$/,''); if(!clean){ alert('That name has no usable characters.'); return; }
+  if(window.NATIVE_USB?.defaultDir) settings.dir=(parent||window.NATIVE_USB.defaultDir)+sep+clean;
+  settings.next=1; rescan=null; records=[]; selected=null; $('details').hidden=true; $('view').hidden=true; $('hint').hidden=false;
+  toUI(); persist(); renderRoll(); log('ok',`new roll ${clean}${settings.dir?': '+settings.dir:''}`);
+  say(`New roll ${clean}. Load frame 1 and press Space for ${tifName(settings.next)}.`,'ok');
+  syncFromFolder({adjust:true});
 };
 $('bTrace').onclick=guard(async()=>{ fromUI(); const r=records.length?[...records].sort((a,b)=>b.scanned.localeCompare(a.scanned))[0]:null;
   const name=(r?r.base:Roll.cleanPrefix(settings.prefix)+'last')+'_usbtrace.json';
