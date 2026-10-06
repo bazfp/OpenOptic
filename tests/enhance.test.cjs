@@ -33,9 +33,23 @@ const expose=(k,o,d)=>{ const a=new Uint16Array(W*H*3);
   const short=expose(1,[0,0,0],dark), long=expose(3.1,off,darkL);
   const fit=[0,1,2].map(c=>({slope:3.1,offset:off[c]}));
   const r=Enhance.fuse(short,long,W,H,{darkS:dark,darkL,fit,film:'neg'});
-  let mn=FS,mx=0,nan=0; for(const v of r.data){ if(Number.isNaN(v))nan++; mn=Math.min(mn,v); mx=Math.max(mx,v); }
-  assert(!nan&&mx>40000&&mn<20000&&r.displayReferred,'fused positive spans a display range');
-  console.log(`exposure fusion: positive ${mn}..${mx}, 1× weight ${r.shortWeight}`);
+  let nan=0; for(const v of r.data) if(Number.isNaN(v)) nan++;
+  assert(!nan&&!r.displayReferred,'fused output is a linear negative, not a display positive');
+  // not inverted: fusion reshuffles overall levels (dense areas take the long pass's level), but
+  // local detail keeps its sign: high-pass of the output against high-pass of the negative
+  const hp=src=>{ const b=Enhance.boxBlur(src,W,H,6), o=new Float32Array(W*H); for(let i=0;i<W*H;i++) o[i]=src[i]-b[i]; return o; };
+  const corr=c=>{ const a=new Float32Array(W*H), b=new Float32Array(W*H); for(let i=0;i<W*H;i++){ a[i]=scene[i*3+c]; b[i]=r.data[i*3+c]; }
+    const x=hp(a), y=hp(b); let sxy=0,sxx=0,syy=0; for(let yy=20;yy<H-20;yy++) for(let xx=20;xx<W-20;xx++){ const i=yy*W+xx; sxy+=x[i]*y[i]; sxx+=x[i]*x[i]; syy+=y[i]*y[i]; }
+    return sxy/Math.sqrt(sxx*syy); };
+  const cs=[0,1,2].map(corr); assert(cs.every(v=>v>0.6),'not inverted: local detail follows the negative '+cs.map(v=>v.toFixed(3)));
+  // no colour balance: channel ratios stay the negative's (scene means R:G:B ≈ 16:7:3.5)
+  const mean=c=>{ let s=0,n=0; for(let i=c;i<r.data.length;i+=3*5){ s+=r.data[i]; n++; } return s/n; }, m=[0,1,2].map(mean);
+  const sm=[0,1,2].map(c=>{ let s=0,n=0; for(let i=c;i<scene.length;i+=3*5){ s+=scene[i]; n++; } return s/n; });
+  assert(Math.abs(Math.log((m[0]/m[2])/(sm[0]/sm[2])))<0.5&&Math.abs(Math.log((m[1]/m[2])/(sm[1]/sm[2])))<0.5,`channel ratios kept: out ${m.map(Math.round)} vs scene ${sm.map(Math.round)}`);
+  // between the passes: at least the 1× level, at most the long pass's
+  const lo=m.every((v,c)=>v>0.9*sm[c]), hi=m.every((v,c)=>v<3.3*sm[c]+off[c]);
+  assert(lo&&hi,`levels between the 1× and long passes: ${m.map(Math.round)}`);
+  console.log(`exposure fusion: linear negative, not inverted (local-detail r ${cs.map(v=>v.toFixed(3)).join('/')}), channel means ${m.map(Math.round).join('/')} (scene ${sm.map(Math.round).join('/')}), 1× weight ${r.shortWeight}`);
 }
 // ---- infrared detection and repair
 {

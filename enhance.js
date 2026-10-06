@@ -164,17 +164,6 @@
   // positive, weighted per pixel by contrast (|Laplacian|), saturation (RGB spread) and
   // well-exposedness (closeness to mid-grey), and blended through Laplacian pyramids. Output is a
   // display-referred positive (gamma-encoded), for viewing, not for negative converters.
-  function renderParams(s,W,H,film){
-    const lohi=[];
-    for(let c=0;c<3;c++){ const v=[];
-      for(let y=Math.floor(H*0.02);y<H*0.98;y+=4) for(let x=Math.floor(W*0.02);x<W*0.98;x+=4) v.push(s[c][y*W+x]);
-      v.sort((a,b)=>a-b); const lo=Math.max(1,v[Math.floor(v.length*0.001)]), hi=Math.max(lo+1,v[Math.floor(v.length*0.999)]); lohi.push([lo,hi]); }
-    return {lohi,neg:film!=='pos'};
-  }
-  function toDisplay(v,lo,hi,neg){
-    if(neg){ const d=Math.log(hi/Math.min(hi,Math.max(lo*0.05,v)))/Math.log(hi/lo); return Math.pow(Math.min(1,Math.max(0,d)),1/1.4); }
-    return Math.pow(Math.min(1,Math.max(0,(v-lo)/(hi-lo))),1/2.2);
-  }
   function reduce(src,w,h){ // 5-tap binomial, decimate by 2
     const w2=(w+1)>>1, h2=(h+1)>>1, tmp=new Float32Array(w2*h), out=new Float32Array(w2*h2), k=[1,4,6,4,1];
     for(let y=0;y<h;y++) for(let x=0;x<w2;x++){ let a=0; for(let t=-2;t<=2;t++){ const xx=Math.min(w-1,Math.max(0,2*x+t)); a+=k[t+2]*src[y*w+xx]; } tmp[y*w2+x]=a/16; }
@@ -196,11 +185,14 @@
     // B = darkS - offset/(k - 1) (Kodak Gold capture: ~560/461/414 against dark frames ~1000-1400).
     const black=[0,1,2].map(c=>Math.max(0,Math.min(darkS[c],darkS[c]-fit[c].offset/Math.max(0.2,fit[c].slope-1))));
     const s=[0,1,2].map(c=>plane(short,W,H,c,black[c]));
-    const l=[0,1,2].map(c=>{ const p=shifted(plane(long,W,H,c),W,H,shift.dy,shift.dx); for(let i=0;i<p.length;i++) p[i]=Math.max(1,p[i]-black[c]-(darkL[c]-darkS[c])); return p; });
+    const clipL=new Uint8Array(W*H);   // long-pass samples near full scale (clipped red on orange-mask film) must not count
+    const l=[0,1,2].map(c=>{ const p=shifted(plane(long,W,H,c),W,H,shift.dy,shift.dx); for(let i=0;i<p.length;i++){ if(p[i]>=0.97*FS) clipL[i]=1; p[i]=Math.max(1,p[i]-black[c]-(darkL[c]-darkS[c])); } return p; });
     yield 0.08;
-    const {lohi,neg}=renderParams(s,W,H,film);
-    // display renderings, in place (s and l become the two exposures, values 0..1)
-    for(let c=0;c<3;c++){ const [lo,hi]=lohi[c]; for(let i=0;i<W*H;i++){ s[c][i]=toDisplay(s[c][i],lo,hi,neg); l[c][i]=toDisplay(l[c][i],lo,hi,neg); } }
+    // Both passes stay negatives: no inversion and no per-channel levels, so the film's orange
+    // mask and the scanner's colour balance pass through for the negative converter. Fusion works
+    // on gamma-encoded values (as Mertens assumes); the result is decoded back to linear 16-bit.
+    const enc=v=>Math.pow(Math.min(1,Math.max(0,v/FS)),1/2.2);
+    for(let c=0;c<3;c++) for(let i=0;i<W*H;i++){ s[c][i]=enc(s[c][i]); l[c][i]=enc(l[c][i]); }
     // Mertens weights
     const weight=e=>{ const w=new Float32Array(W*H), g=new Float32Array(W*H);
       for(let i=0;i<W*H;i++) g[i]=(e[0][i]+e[1][i]+e[2][i])/3;
@@ -213,7 +205,7 @@
     yield 0.15;
     const w1=weight(s); yield 0.25;
     const w2=weight(l); yield 0.35;
-    for(let i=0;i<W*H;i++){ const t=w1[i]+w2[i]; w1[i]=w1[i]/t; }
+    for(let i=0;i<W*H;i++){ const b=clipL[i]?w2[i]*1e-4:w2[i], t=w1[i]+b; w1[i]=w1[i]/t; }
     const levels=Math.max(1,Math.floor(Math.log2(Math.min(W,H)))-3), gw=gaussPyr(w1,W,H,levels);
     let mean1=0; for(let i=0;i<W*H;i++) mean1+=w1[i]; mean1/=W*H;
     const out=short;
@@ -232,9 +224,9 @@
         if(acc){ const up=expand(acc.d,acc.w,acc.h,w,h); for(let i=0;i<w*h;i++) blend[i]+=up[i]; }
         acc={d:blend,w,h};
       }
-      for(let i=0,j=c;i<W*H;i++,j+=3){ const v=Math.round(Math.min(1,Math.max(0,acc.d[i]))*FS); out[j]=v; }
+      for(let i=0,j=c;i<W*H;i++,j+=3) out[j]=Math.round(Math.pow(Math.min(1,Math.max(0,acc.d[i])),2.2)*FS);   // back to linear, black 0
     }
-    return {data:out,displayReferred:true,shortWeight:+mean1.toFixed(3),black:black.map(Math.round)};
+    return {data:out,displayReferred:false,shortWeight:+mean1.toFixed(3),black:black.map(Math.round)};
   }
 
   // ------------------------------------------------------------ infrared: detection

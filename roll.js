@@ -47,7 +47,7 @@
       const P=pending.aligned, rgb=new Uint16Array(P.data.buffer,P.data.byteOffset,P.data.byteLength>>1);
       pv=Enhance.previewFromAligned(rgb,P.width,P.height,PREVIEW_MAX);
     }else pv=CaptureRuntime.previewPlanes(bytes,g,PREVIEW_MAX,offsets,settings.mirror!==false);
-    const display=pending.processing?.multiExposure?.mode==='fusion';
+    const display=!!pending.aligned?.displayReferred;   // fused output is a negative too (since v1.x older frames could be positives)
     pending.preview=await ctx.makePreview(pv.planes,pv.g,display?{...settings,film:'display'}:settings);   // {large, thumb}
     return saveFrame(ctx,pending);
   }
@@ -108,7 +108,7 @@
         if(repairing){ lrgb=Enhance.shiftRGB(lrgb,W,H,shift.dy,shift.dx); await repair(rgb,' (1× pass)'); await repair(lrgb,' (long pass)'); }
         const f=await Enhance.runAsync(Enhance.fuseSteps(rgb,lrgb,W,H,{darkS,darkL,fit:fits,film:s.film,shift:repairing?{dy:0,dx:0}:shift}),stage('fuse'));
         Object.assign(info.multiExposure,{fits,fusion:{method:'Mertens exposure fusion (contrast, saturation, well-exposedness; Laplacian pyramid blend)',
-          shortPassWeight:f.shortWeight,black:f.black,output:'display-referred positive (gamma-encoded), not for negative converters'}});
+          shortPassWeight:f.shortWeight,black:f.black,output:'linear 16-bit negative (not inverted or colour balanced, black 0), tone-compressed by exposure fusion: invert it in a negative converter'}});
       }else{
         await tick('merge');
         const r=Enhance.mergeRange(rgb,lrgb,W,H,{darkS,darkL,noise,shift});
@@ -126,7 +126,7 @@
     log(`extra passes processed in ${((Date.now()-t0)/1000).toFixed(1)} s`);
     // black-level correction as in the normal path (linear output only)
     if(p.offsets&&!info.multiExposure?.fusion) for(let i=0;i<rgb.length;i++){ const v=rgb[i]-p.offsets[i%3]; rgb[i]=v<0?0:v>65535?65535:Math.round(v); }
-    p.aligned={...a,data:new Uint8Array(rgb.buffer,rgb.byteOffset,rgb.byteLength),displayReferred:!!info.multiExposure?.fusion};
+    p.aligned={...a,data:new Uint8Array(rgb.buffer,rgb.byteOffset,rgb.byteLength),displayReferred:false};
     p.processing=info;
   }
 
@@ -151,7 +151,7 @@
           // conversion may reuse the source buffer, halving peak memory on large scans
           const average=settings.pixels!=='full', inPlace=average&&!pending.names.some(n=>n.kind==='raw-tiff');
           let a=pending.aligned||(pending.aligned=CaptureRuntime.alignedFrame(bytes,g,{average,offsets:pending.offsets,inPlace,mirror:settings.mirror!==false,filter:settings.pixels==='lanczos'?'lanczos3':'box'}));
-          const note=pending.processing?.multiExposure?` multi-exposure ${pending.processing.multiExposure.mode}${a.displayReferred?' (tone-mapped positive)':''}`:'';
+          const note=pending.processing?.multiExposure?` multi-exposure ${pending.processing.multiExposure.mode}${pending.processing.multiExposure.fusion?' (exposure-fused negative)':''}`:'';
           // with infrared, the registered IR plane is the 4th sample of every pixel (RGBI, ExtraSamples
           // = unspecified), as in SilverFast's 64-bit HDRi files; the RGB data is unchanged
           const ir=pending.irPlane, ch=ir?4:3;

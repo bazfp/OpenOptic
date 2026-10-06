@@ -181,7 +181,7 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
     <label class="check"><input type="checkbox" id="mirror"> flip horizontally (mirror)</label>
     <div class="field"><label for="multiExposure">Multi&#8209;exposure</label>
       <select id="multiExposure"><option value="off">off</option><option value="range">extended range (linear)</option><option value="fusion">exposure fusion (HDR look)</option></select></div>
-    <div class="note" id="meNote"><b class="lead">Scans the frame twice — a normal pass, then a longer exposure — and merges them for cleaner shadows.</b><ul><li><b>Extended range</b> — linear 16-bit TIFF for negative converters. Dense areas get the long pass’s lower noise; highlights stay from the normal pass.</li><li><b>Exposure fusion</b> — tone-mapped positive with an HDR look. Not for converters.</li><li><b>Long pass</b> — the 2nd pass’s exposure only; never more passes. Each 1× adds ~40 s. 2× roughly halves shadow noise; 3× cuts it to a third–half.</li></ul><span class="foot">3600 dpi only. Calibration stays at 1×, as in SilverFast.</span></div>
+    <div class="note" id="meNote"><b class="lead">Scans the frame twice — a normal pass, then a longer exposure — and merges them for cleaner shadows.</b><ul><li><b>Extended range</b> — linear 16-bit TIFF for negative converters. Dense areas get the long pass’s lower noise; highlights stay from the normal pass.</li><li><b>Exposure fusion</b> — HDR-look merge of the two negatives (local contrast evened out), saved as a negative: not inverted, no colour balance, ready for your converter.</li><li><b>Long pass</b> — the 2nd pass’s exposure only; never more passes. Each 1× adds ~40 s. 2× roughly halves shadow noise; 3× cuts it to a third–half.</li></ul><span class="foot">3600 dpi only. Calibration stays at 1×, as in SilverFast.</span></div>
     <div class="field"><label for="meFactor">Long pass</label>
       <select id="meFactor"><option value="2">2× exposure</option><option value="3">3× exposure (as SilverFast)</option><option value="4">4× exposure</option></select></div>
     <div class="field"><label for="infrared">Infrared</label>
@@ -199,7 +199,7 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
       <div class="field"><label for="lampCheck">Illumination check</label>
         <select id="lampCheck"><option value="warn">warn (recommended)</option><option value="wait">wait and retry</option><option value="off">off</option></select></div>
       <label class="check"><input type="checkbox" id="blackLevel"> correct black level (recommended)</label>
-      <div class="note"><b class="lead">TIFFs hold the scanner’s linear 16-bit data — not inverted or colour balanced, ready for a negative converter.</b><ul><li><b>Black-level correction</b> uses the dark calibration frame. Keep it on.</li><li><b>Film type</b> only changes the preview; <b>orientation</b> is stored as a TIFF tag.</li></ul><span class="foot">Exception: exposure fusion saves a positive.</span></div>
+      <div class="note"><b class="lead">TIFFs hold the scanner’s linear 16-bit data — not inverted or colour balanced, ready for a negative converter.</b><ul><li><b>Black-level correction</b> uses the dark calibration frame. Keep it on.</li><li><b>Film type</b> only changes the preview; <b>orientation</b> is stored as a TIFF tag.</li></ul><span class="foot">This includes both multi-exposure modes and infrared repair.</span></div>
     </details>
   </section>
 
@@ -832,7 +832,7 @@ function recordFromSidecar(sc,old){
     orientation:sc.orientation?.tiffTag||1,mirror:P.horizontalMirror?.applied!==false,
     files:(sc.files||[]).map(({kind,name,bytes,sha256,width,height})=>({kind,name,bytes,sha256:sha256||null,width,height})),
     shifts:P.channelShiftLines||[0,0,0],shiftConfidence:P.channelShiftConfidence||[1,0,0],lampWarning:sc.acquisition?.illuminationCheck?.warning||null,
-    enhanced:[me?'ME':null,ir?'IR':null].filter(Boolean),displayReferred:!!me?.fusion,repairMask:ir?.overlay||old?.repairMask||null,
+    enhanced:[me?'ME':null,ir?'IR':null].filter(Boolean),displayReferred:!!me?.fusion&&/positive/.test(me.fusion.output||''),   // fused positives from earlier versionsrepairMask:ir?.overlay||old?.repairMask||null,
     thumb:old?.thumb||null,large:old?.large||null,status:'saved'};
 }
 let syncing=null;

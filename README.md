@@ -255,9 +255,12 @@ Time: the long pass's line time is its exposure, so with dummy lines off a k× p
 (2× 79 s, 3× 119 s, 4× 158 s) plus ~15 s to recalibrate and reposition. A 3600 dpi frame with
 the 3× pass takes about 2 min 55 s (SilverFast: 3 min 53 s for the same job); with infrared as
 well, about 3 min 50 s. The resolution menu shows the total and the passes.
-- **Exposure fusion** (artistic): both passes are inverted and merged Mertens-style (contrast,
-  saturation and well-exposedness weights, Laplacian-pyramid blend). The TIFF is a gamma-encoded,
-  tone-mapped positive, not for converters.
+- **Exposure fusion** (HDR look): the two passes are merged Mertens-style (contrast, saturation
+  and well-exposedness weights, Laplacian-pyramid blend) **as negatives**: no inversion and no
+  per-channel levels, so the orange mask and the scanner's colour balance pass through. The blend
+  runs on gamma-encoded values and is decoded back to linear 16-bit (black 0); clipped long-pass
+  samples are left out. Dense areas take more of the long pass, so overall contrast is compressed
+  (the HDR look) while local detail is kept. Invert it in your negative converter as usual.
 
 ## Infrared dust and scratch repair (3600 dpi)
 
