@@ -15,7 +15,7 @@ Pick the file for your system:
 
 Run it, and your browser opens the roll scanner page. Keep the console window open while you scan. Press Ctrl+C in it (or close it) to quit.
 
-Scans are saved by the helper directly into the roll folder shown on the page (default `~/Pictures/OpticFilm/Roll001`; change it with **Choose…**, which opens a folder browser and can also open your system's folder dialog, or set the default parent with `-out /path`). Choose a resolution (1440, 3600 or 7200 dpi; 7200 needs about 1.4 GB of free memory in the browser), set a name prefix and starting number, load a frame, and press Space: the frame is scanned, saved as `<prefix><number>.tif` with a `.json` record, and released from memory, and the number advances. A `<prefix>_roll.json` file in the folder lists every frame. Existing files are never overwritten unless you choose Rescan on a frame.
+Scans are saved by the helper directly into the roll folder shown on the page (default `~/Pictures/OpticFilm/Roll`, files `Roll_01.tif`, `Roll_02.tif` …; change it with **Choose…**, which opens a folder browser and can also open your system's folder dialog, or set the default parent with `-out /path`). Choose a resolution (1440, 3600 or 7200 dpi; 7200 needs about 1.4 GB of free memory in the browser), set a name prefix and starting number, load a frame, and press Space: the frame is scanned, saved as `<prefix><number>.tif` with a `.json` record, and released from memory, and the number advances. A `<prefix>_roll.json` file in the folder lists every frame. Existing files are never overwritten unless you choose Rescan on a frame.
 
 The previous research page (custom resolution, crop, infrared; not verified against the vendor software) is at `/experimental`.
 

@@ -699,11 +699,13 @@ const store={
 // ---------------------------------------------------------------- settings and records (survive a page reload)
 const KEY='opticfilm.roll.v1';
 const sep=(window.NATIVE_USB?.defaultDir||'').includes('\\')?'\\':'/';
-const defaults={dir:window.NATIVE_USB?.defaultDir?window.NATIVE_USB.defaultDir+sep+'Roll001':'',prefix:'Roll001_',next:1,digits:2,film:'neg',orientation:1,
+const defaults={dir:window.NATIVE_USB?.defaultDir?window.NATIVE_USB.defaultDir+sep+'Roll':'',prefix:'Roll_',next:1,digits:2,film:'neg',orientation:1,
   tiff:'aligned',pixels:'lanczos',profile:'full',jpeg:false,mirror:true,warm:1,keepLamp:true,lampCheck:'warn',blackLevel:true,pixelSampling:'deletion',multiExposure:'off',meFactor:'3',infrared:'off',dummyLines:'none',btn3:'scan',btn2:'preview'};
 let settings={...defaults}, records=[], pending=null, selected=null, rescan=null;
-try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s){ settings={...defaults,...s.settings}; records=s.records||[]; if(!s.v&&settings.warm===20) settings.warm=1; if((s.v||0)<3&&settings.dummyLines==='recorded') settings.dummyLines='none'; delete settings.exposureMultiplier; if((s.v||0)<4&&settings.pixels==='square') settings.pixels='lanczos'; } }catch(e){}   // 20 s was the old default
-function persist(){ if(dry) return; try{ localStorage.setItem(KEY,JSON.stringify({v:4,settings,records:records.map(({large,repairMask,previewFailed,...r})=>r)})); }catch(e){ log('w','could not remember the roll list in this browser: '+e.message); } }
+try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s){ settings={...defaults,...s.settings}; records=s.records||[]; if(!s.v&&settings.warm===20) settings.warm=1; if((s.v||0)<3&&settings.dummyLines==='recorded') settings.dummyLines='none'; delete settings.exposureMultiplier; if((s.v||0)<4&&settings.pixels==='square') settings.pixels='lanczos';
+    // the old untouched default roll name (Roll001_ in …/Roll001) becomes the plain one, unless it holds frames
+    if((s.v||0)<5&&settings.prefix==='Roll001_'&&!records.length&&(!window.NATIVE_USB?.defaultDir||settings.dir===window.NATIVE_USB.defaultDir+sep+'Roll001')){ settings.prefix=defaults.prefix; settings.dir=defaults.dir; } } }catch(e){}   // 20 s was the old default
+function persist(){ if(dry) return; try{ localStorage.setItem(KEY,JSON.stringify({v:5,settings,records:records.map(({large,repairMask,previewFailed,...r})=>r)})); }catch(e){ log('w','could not remember the roll list in this browser: '+e.message); } }
 // sidebar notes: hidden behind an (i) beside the control they describe
 for(const p of document.querySelectorAll('aside .note')){
   const prev=p.previousElementSibling; if(!prev) continue;
@@ -1046,8 +1048,8 @@ function ctxFor(number,overwrite){ const snapshot={...settings}; return {setting
   progress:(label,f)=>{ say(`${label}… ${Math.round(f*100)} %`,'busy'); progress(f); if(f>=1) setTimeout(()=>progress(0),400); }}; }
 function checkReady(){
   if(!settings.dir&&nativeFiles) throw new Error('Choose a folder for this roll first.');
-  if(nativeFiles&&!/^([A-Za-z]:[\\/]|\\\\|\/)/.test(settings.dir)) throw new Error('The folder must be a full path, e.g. '+(sep==='\\'?'C:\\Scans\\Roll001':'/home/me/Scans/Roll001'));
-  if(!Roll.cleanPrefix(settings.prefix)) throw new Error('Enter a name prefix, e.g. Roll001_');
+  if(nativeFiles&&!/^([A-Za-z]:[\\/]|\\\\|\/)/.test(settings.dir)) throw new Error('The folder must be a full path, e.g. '+(sep==='\\'?'C:\\Scans\\Roll':'/home/me/Scans/Roll'));
+  if(!Roll.cleanPrefix(settings.prefix)) throw new Error('Enter a name prefix, e.g. Roll_');
 }
 async function scanAndSave(){
   fromUI(); checkReady();
