@@ -349,6 +349,9 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/api/files/preview":
 		handleFilesPreview(w, r)
 		return
+	case "/api/files/trash":
+		handleFilesTrash(w, r)
+		return
 	case "/api/files/mkdir":
 		handleFilesMkdir(w, r)
 		return

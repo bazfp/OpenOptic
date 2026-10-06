@@ -33,9 +33,9 @@ aside{border-right:1px solid var(--line);padding:16px 18px 40px;overflow:auto}
   aside{min-height:0;overflow-y:auto;overscroll-behavior:contain}
   .stage{min-height:0;overflow:hidden}
   .viewer{min-height:0;overflow:hidden}
-  .roll{height:26vh;max-height:none;flex:none}
+  .roll{flex:none}
   .log{height:26vh;flex:none}
-  .details{max-height:16vh;overflow:auto;flex:none}
+  .details{max-height:30vh;overflow:auto;flex:none}
 }
 section{margin:0 0 22px}
 section h2{font-size:13px;font-weight:600;color:var(--ink2);margin:0 0 8px;letter-spacing:.02em}
@@ -89,18 +89,20 @@ kbd{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--amber)}
 .viewer .vbtn[aria-pressed=true]{border-color:var(--amber);color:var(--amber)}
 .viewer .vbtn kbd{font:10px "JetBrains Mono",monospace;color:var(--dim);margin-left:4px}
 .viewer .livetag{position:absolute;left:18px;top:12px;font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--amber)}
-.roll{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:10px;padding:12px 16px;border-top:1px solid var(--line);max-height:40vh;overflow:auto}
-.roll figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden;cursor:pointer}
+/* the roll is one filmstrip row, scrolled sideways: it stays the height of one frame */
+.roll{display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--line);overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+.roll figure{flex:0 0 128px;margin:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden;cursor:pointer}
 .roll figure.sel{border-color:var(--amber)}
 .roll figure.failed{border-color:var(--bad)}
-.roll img{width:100%;height:96px;display:block;background:#000;object-fit:contain}
-.roll figcaption{padding:5px 7px;font-size:12px;color:var(--ink2);font-family:"JetBrains Mono",monospace}
-.roll figcaption b{color:var(--ink);font-weight:500;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.roll .empty{grid-column:1/-1;color:var(--dim);font-size:13px}
+.roll img{width:100%;height:80px;display:block;background:#000;object-fit:contain}
+.roll figcaption{padding:4px 7px 5px;font-size:11px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink2);font-family:"JetBrains Mono",monospace}
+.roll figcaption b{color:var(--ink);font-weight:500;font-size:12px;display:flex;gap:4px;align-items:center;overflow:hidden;white-space:nowrap}
+.roll figcaption b span.n{overflow:hidden;text-overflow:ellipsis}
+.roll .empty{flex:1;color:var(--dim);font-size:13px}
 .roll figure.missing{border-style:dashed;opacity:.55}
-.roll figcaption .badge{display:inline-block;margin:2px 4px 0 0;padding:0 5px;border:1px solid var(--amber);border-radius:3px;color:var(--amber);font-size:10px;line-height:15px}
-.roll figure.missing figcaption i{color:var(--bad);font-style:normal;display:block}
-.roll .rollbar{grid-column:1/-1;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--ink2)}
+.roll figcaption .badge{flex:none;display:inline-block;padding:0 4px;border:1px solid var(--amber);border-radius:3px;color:var(--amber);font-size:10px;line-height:15px}
+.roll figure.missing figcaption i{color:var(--bad);font-style:normal}
+.roll .rollbar{flex:0 0 260px;align-self:stretch;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--ink2)}
 .roll .rollbar span{flex:1 1 200px}
 .next{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--amber);word-break:break-all}
 .big{font-size:16px;padding:11px 14px}
@@ -110,7 +112,19 @@ kbd{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--amber)}
 .status.ok{color:var(--ok)}.status.err{color:var(--bad)}.status.busy{color:var(--amber)}
 .dry{color:#1a1207;background:var(--amber);border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600}
 details summary{cursor:pointer;color:var(--ink2);font-size:13px}
-.details{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--ink2);padding:8px 16px;border-top:1px solid var(--line);white-space:pre-wrap}
+.details{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--ink2);padding:6px 16px;border-top:1px solid var(--line)}
+.details .dhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.details .dhead .dsum{flex:1 1 260px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.details .dhead .dsum b{color:var(--ink);font-weight:500}
+.details .dhead button{font-size:12px;padding:4px 10px}
+.details button.dtoggle{background:transparent;border:1px solid var(--line);color:var(--ink2)}
+.details button.dtoggle[aria-expanded=true]{color:var(--amber);border-color:var(--amber)}
+.details .dbody{white-space:pre-wrap;margin:6px 0 2px;color:var(--dim)}
+.details .warn{color:var(--bad)}
+.tabs{align-items:stretch}
+.tabs .tabsp{flex:1}
+.tabs button.collapse{color:var(--dim);font-size:12px}
+.lower-collapsed .roll,.lower-collapsed .log,.lower-collapsed .details{display:none!important}
 .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 16px;border-top:1px solid var(--line);background:var(--panel)}
 .controls .status{margin:0;flex:1 1 100%;order:10}
 .controls #bStop{margin-left:auto}
@@ -255,7 +269,7 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
     <div class="status" id="rollStatus">Press Connect scanner to start.</div>
   </div>
   <div class="progress" id="prog"><i></i></div>
-  <div class="tabs"><button class="active" data-tab="roll">Roll</button><button data-tab="log">Log</button></div>
+  <div class="tabs"><button class="active" data-tab="roll">Roll</button><button data-tab="log">Log</button><span class="tabsp"></span><button type="button" class="collapse" id="bCollapse" aria-expanded="true" title="Hide the roll and log, giving the preview the full height">Hide ▾</button></div>
   <div class="roll" id="roll"></div>
   <div class="details" id="details" hidden></div>
   <div class="log" id="log" hidden></div>
@@ -304,7 +318,16 @@ function rec(e){ e.t=+((performance.now()-t0)/1000).toFixed(4); trace.push(e); i
 function progress(f){ $('prog').firstElementChild.style.width=(f*100).toFixed(1)+'%'; }
 function setLamp(on){ const l=$('lampState'); l.className='lamp '+(on?'on':''); l.textContent=on?'LED on':'LED off'; }
 function say(text,kind=''){ const s=$('rollStatus'); s.textContent=text; s.className='status '+kind; }
-document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('active',x===b)); $('log').hidden=b.dataset.tab!=='log'; $('roll').hidden=b.dataset.tab!=='roll'; $('details').hidden=b.dataset.tab!=='roll'||!selected; });
+document.querySelectorAll('.tabs button[data-tab]').forEach(b=>b.onclick=()=>{ setLower(true); document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('active',x===b)); $('log').hidden=b.dataset.tab!=='log'; $('roll').hidden=b.dataset.tab!=='roll'; $('details').hidden=b.dataset.tab!=='roll'||!selected; });
+
+// The roll/log panel can be collapsed to give the preview the whole height; the frame details
+// open to one summary line with an Info toggle. Both choices are remembered in this browser.
+const ui={lower:true,info:false};
+try{ Object.assign(ui,JSON.parse(localStorage.getItem('opticfilm.ui')||'{}')); }catch(e){}
+const saveUi=()=>{ try{ localStorage.setItem('opticfilm.ui',JSON.stringify(ui)); }catch(e){} };
+function setLower(open){ ui.lower=open; saveUi(); document.body.classList.toggle('lower-collapsed',!open);
+  const b=$('bCollapse'); b.textContent=open?'Hide ▾':'Show roll ▴'; b.setAttribute('aria-expanded',String(open)); }
+$('bCollapse').onclick=()=>setLower(!ui.lower); setLower(ui.lower);
 
 // ---------------------------------------------------------------- transport
 let dev=null, epIn=1, epOut=2, fake=false, cancelFlag=false, operationActive=false;
@@ -732,17 +755,19 @@ function renderRoll(){
   const gone=records.filter(r=>missing.has(r.number));
   if(gone.length){
     const bar=document.createElement('div'); bar.className='rollbar';
-    const t=document.createElement('span'); t.textContent=`${gone.length} frame${gone.length===1?'':'s'} no longer found in the folder (deleted or moved outside this app).`;
-    const b=document.createElement('button'); b.textContent=`Remove ${gone.length===1?'it':'them'} from the list`; b.onclick=()=>removeRecords(gone.map(r=>r.number));
+    const t=document.createElement('span'); t.textContent=`${gone.length} frame${gone.length===1?' has':'s have'} no TIFF in the folder any more (deleted or moved outside this app).`;
+    const b=document.createElement('button'); b.textContent=folderMode()?`Move ${gone.length===1?'its record':'their records'} to Deleted`:`Remove ${gone.length===1?'it':'them'} from the list`;
+    b.onclick=()=>{ if(!folderMode()||confirm(`Move what is left of ${gone.length===1?gone[0].base:gone.length+' frames'} (the record .json and any other files) to the “Deleted” folder?`)) removeRecords(gone.map(r=>r.number)); };
     bar.append(t,b); R.appendChild(bar);
   }
   for(const r of [...records].sort((a,b)=>b.number-a.number)){
     const f=document.createElement('figure'); if(selected===r) f.className='sel'; if(r.status!=='saved') f.classList.add('failed'); if(missing.has(r.number)) f.classList.add('missing');
     const img=document.createElement('img'); img.alt=r.base; if(r.thumb) img.src=r.thumb;
     const cap=document.createElement('figcaption'); const mb=r.files.reduce((a,x)=>a+(x.bytes||0),0)/1048576;
-    cap.innerHTML=`<b></b>${mb.toFixed(0)} MB · ${new Date(r.scanned).toLocaleTimeString()}`; cap.querySelector('b').textContent=r.base;
-    if(r.enhanced?.length){ const bd=document.createElement('div'); for(const t of r.enhanced){ const m=document.createElement('span'); m.className='badge'; m.textContent=t; m.title=t==='ME'?'multi-exposure':'infrared'; bd.appendChild(m); } cap.appendChild(bd); }
-    if(missing.has(r.number)){ const m=document.createElement('i'); m.textContent='file missing'; cap.appendChild(m); }
+    const nm=document.createElement('b'), nn=document.createElement('span'); nn.className='n'; nn.textContent=r.base; nm.appendChild(nn);
+    for(const t of r.enhanced||[]){ const m=document.createElement('span'); m.className='badge'; m.textContent=t; m.title=t==='ME'?'multi-exposure':'infrared'; nm.appendChild(m); }
+    cap.append(nm,`${mb.toFixed(0)} MB · ${new Date(r.scanned).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`); cap.title=`${r.base} · ${new Date(r.scanned).toLocaleString()}`;
+    if(missing.has(r.number)){ cap.append(' · '); const m=document.createElement('i'); m.textContent='missing'; cap.appendChild(m); }
     f.append(img,cap); f.onclick=()=>select(r); R.appendChild(f);
   }
 }
@@ -807,19 +832,34 @@ function toggleOverlay(){ if($('bOverlay').hidden) return; overlayOn=!overlayOn;
 $('bOverlay').onclick=toggleOverlay;
 function select(r){
   selected=r; showLarge(r);
-  const d=$('details'); d.hidden=false;
-  d.textContent=`${r.base}  ·  ${new Date(r.scanned).toLocaleString()}  ·  ${r.profile}  ·  film ${r.film}  ·  ${Roll.ORIENTATIONS[r.orientation]}\n`+
-    r.files.map(f=>`  ${f.name}  ${(f.bytes/1048576).toFixed(1)} MB${f.width?`  ${f.width}×${f.height}`:''}${f.sha256?'  sha256 '+f.sha256.slice(0,16)+'…':''}`).join('\n')+
-    `\n  channel alignment R/G/B ${r.shifts.join(' / ')} lines (confidence ${r.shiftConfidence.slice(1).join(', ')})`;
-  const b=document.createElement('button'); b.textContent=`Rescan ${r.base} (overwrite)…`; b.style.marginTop='8px';
+  const d=$('details'); d.hidden=false; d.innerHTML='';
+  const mb=r.files.reduce((a,x)=>a+(x.bytes||0),0)/1048576, dpi=(r.profile.match(/\d{4}/)||[''])[0];
+  const head=document.createElement('div'); head.className='dhead';
+  const tog=document.createElement('button'); tog.type='button'; tog.className='dtoggle'; tog.setAttribute('aria-expanded',String(ui.info)); tog.textContent=ui.info?'Info ▾':'Info ▸';
+  tog.title='Files, sizes, checksums and channel alignment';
+  const sum=document.createElement('span'); sum.className='dsum'; const nb=document.createElement('b'); nb.textContent=r.base;
+  sum.append(nb,`  ${new Date(r.scanned).toLocaleString([],{dateStyle:'short',timeStyle:'short'})} · ${dpi?dpi+' dpi':r.profile} · ${mb.toFixed(0)} MB · ${r.film==='pos'?'slide':'negative'}${r.enhanced?.length?' · '+r.enhanced.join('+'):''}`);
+  if(missing.has(r.number)){ const w=document.createElement('span'); w.className='warn'; w.textContent='  ⚠ TIFF missing'; sum.appendChild(w); }
+  const b=document.createElement('button'); b.textContent='Rescan…'; b.title=`Scan ${r.base} again and overwrite its files`;
   b.onclick=()=>{ if(confirm(`Scan frame ${r.base} again and overwrite its files?\n\nLoad that frame in the holder first.`)){ rescan=r.number; refreshName(); say(`Next scan replaces ${r.base}. Press Space when the frame is in place.`); } };
-  const rm=document.createElement('button'); rm.className='danger'; rm.textContent=`Remove ${r.base} from list…`; rm.style.margin='8px 0 0 8px';
-  rm.onclick=()=>{ if(confirm(`Remove ${r.base} from the roll list?\n\nFiles on disk are not touched.`)) removeRecords([r.number]); };
-  if(missing.has(r.number)) d.append('\n  ⚠ not found in the current folder');
-  d.append('\n',b,rm); renderRoll();
+  const rm=document.createElement('button'); rm.className='danger';
+  if(folderMode()){ rm.textContent='Delete…'; rm.title=`Move ${r.base}'s files to the Deleted folder`;
+    rm.onclick=()=>{ if(confirm(`Delete frame ${r.base}?\n\nIts files (${frameFiles(r).filter(n=>r.files.some(f=>f.name===n)||n===r.base+'.json').join(', ')}) are moved to the “Deleted” folder inside the roll folder. You can restore them from there, or empty it yourself.`)) removeRecords([r.number]); }; }
+  else { rm.textContent='Remove from list…'; rm.title=`Drop ${r.base} from this list (files untouched)`;
+    rm.onclick=()=>{ if(confirm(`Remove ${r.base} from the roll list?\n\nFiles are not touched${dry?' (dry run)':' (this page cannot reach your folder without the helper)'}.`)) removeRecords([r.number]); }; }
+  head.append(tog,sum,b,rm);
+  const body=document.createElement('div'); body.className='dbody'; body.hidden=!ui.info;
+  body.textContent=`${r.profile} · ${Roll.ORIENTATIONS[r.orientation]} · scanned ${new Date(r.scanned).toLocaleString()}\n`+
+    r.files.map(f=>`${f.name}  ${(f.bytes/1048576).toFixed(1)} MB${f.width?`  ${f.width}×${f.height}`:''}${f.sha256?'  sha256 '+f.sha256.slice(0,16)+'…':''}`).join('\n')+
+    `\nchannel alignment R/G/B ${r.shifts.map(v=>+(+v).toFixed(2)).join(' / ')} lines (confidence ${r.shiftConfidence.slice(1).map(v=>+(+v).toFixed(3)).join(', ')})`+(r.lampWarning?`\nillumination: ${r.lampWarning}`:'');
+  tog.onclick=()=>{ ui.info=!ui.info; saveUi(); body.hidden=!ui.info; tog.setAttribute('aria-expanded',String(ui.info)); tog.textContent=ui.info?'Info ▾':'Info ▸'; };
+  d.append(head,body); renderRoll();
 }
-// Roll list housekeeping: frames whose files were deleted outside the app are flagged, and any
-// frame can be dropped from the list (and from the roll record JSON). Files on disk are never deleted.
+// Roll list housekeeping. With the helper the list is the folder, so deleting a frame moves its
+// files to <roll folder>/Deleted (recoverable; nothing is ever erased). Without the helper (or in a
+// dry run) the list is this browser's, and a frame is only dropped from it.
+const folderMode=()=>nativeFiles&&!dry;
+const frameFiles=r=>[...new Set([...r.files.map(f=>f.name),r.base+'.json',r.base+'_preview.jpg',r.base+'_raw.tif',r.base+'_ir.tif',r.base+'_irmask.png',r.base+'_usbtrace.json'])];
 let missing=new Set(), checkingMissing=false;
 const imageFiles=r=>{ const img=r.files.filter(f=>f.kind==='tiff'||f.kind==='raw-tiff'); return (img.length?img:r.files).map(f=>f.name); };
 // ---------------------------------------------------------------- the roll is what is in its folder
@@ -914,21 +954,33 @@ async function checkMissing(){
   finally{ checkingMissing=false; }
 }
 async function removeRecords(numbers){
-  if(operationActive){ say('Wait for the current scan to finish before removing frames.','err'); return; }
-  const drop=new Set(numbers), names=records.filter(r=>drop.has(r.number)).map(r=>r.base);
+  if(operationActive){ say('Wait for the current scan to finish first.','err'); return; }
+  const drop=new Set(numbers), gone=records.filter(r=>drop.has(r.number)), names=gone.map(r=>r.base);
   if(!names.length) return;
-  for(const r of records) if(drop.has(r.number)) previewDB.del(r);
+  let moved=null;
+  if(folderMode()){
+    try{ moved=await api('/api/files/trash',{dir:settings.dir,names:gone.flatMap(frameFiles)}); }
+    catch(e){ say(`Could not delete ${names.join(', ')}: ${e.message}`,'err'); log('err','delete failed: '+e.message); syncFromFolder(); return; }
+  }
+  for(const r of gone) previewDB.del(r);
   records=records.filter(r=>!drop.has(r.number)); for(const n of drop) missing.delete(n);
-  if(selected&&drop.has(selected.number)){ selected=null; $('details').hidden=true; $('view').hidden=true; $('hint').hidden=false; }
+  if(selected&&drop.has(selected.number)){ selected=null; $('details').hidden=true; $('view').hidden=true; $('hint').hidden=false; show(null); }
   if(rescan!==null&&drop.has(rescan)) rescan=null;
   persist(); renderRoll(); refreshName();
-  log('w',`removed from the roll list: ${names.join(', ')} (files on disk untouched)`);
-  say(`Removed ${names.length===1?names[0]:names.length+' frames'} from the list. Files on disk were not touched.`,'ok');
+  const what=names.length===1?names[0]:names.length+' frames';
+  if(moved){
+    log('w',`deleted ${names.join(', ')}: moved ${moved.moved.join(', ')||'nothing (already gone)'} to ${moved.folder}`);
+    say(`Deleted ${what}: ${moved.moved.length} file${moved.moved.length===1?'':'s'} moved to the “Deleted” folder in the roll folder (restore them from there if needed).`,'ok');
+  }else{
+    log('w',`removed from the roll list: ${names.join(', ')} (files untouched)`);
+    say(`Removed ${what} from the list. Files were not touched.`,'ok');
+  }
   // keep the roll record JSON in step, but never recreate a folder the user has deleted
-  if(nativeFiles&&!dry){
+  if(folderMode()){
     const mf=Roll.manifestName(settings);
     try{ if((await store.exists([mf])).length) await store.save(mf,[JSON.stringify(Roll.manifest(settings,records),null,2)],{overwrite:true}); }
     catch(e){ log('w','roll record not updated: '+e.message); }
+    syncFromFolder();
   }
 }
 function show(src){ const v=$('view'); if(src){ v.src=src; v.hidden=false; $('hint').hidden=true; $('live').hidden=true; $('liveTag').hidden=true; } $('overlay').hidden=true; $('bOverlay').hidden=true; }

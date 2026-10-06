@@ -158,13 +158,29 @@ TIFF, downsampled by the helper, one at a time in the background.
 Selecting a saved frame shows a 2400 px preview (box-filtered from the full frame). These previews
 are kept in the browser's IndexedDB for the helper's address, so they survive page reloads; the roll
 list itself keeps 240 px thumbnails. Frames scanned before this version only have the thumbnail.
-Removing a frame from the list also removes its stored preview.
+Deleting a frame also removes its stored preview.
 
-## Removing frames from the roll list
+## Roll strip and frame details
 
-Select a frame and press **Remove … from list** to drop it from the roll list and the roll record JSON. Files on disk are never deleted by the page.
+The roll is a single filmstrip row under the preview (scroll it sideways). Selecting a frame shows
+one summary line (name, time, resolution, size, film, ME/IR) with **Rescan…** and **Delete…**;
+**Info ▸** expands the file list, checksums and channel alignment. **Hide ▾** on the Roll/Log tab
+bar collapses the whole panel so the preview gets the full height (clicking a tab opens it again).
+Both choices are remembered in this browser.
 
-When running under the helper, the page checks the roll folder on load, when the folder changes, and whenever the browser window regains focus. Frames whose TIFFs are no longer there are shown dashed and marked “file missing”, and a bar above the list offers to remove them all at once. The frame counter is not changed; set **Number** yourself if you want to reuse freed numbers.
+## Deleting frames
+
+With the helper the roll list is the roll folder, so select a frame and press **Delete …**: after a
+confirmation, every file of that frame (TIFFs, its `.json`, preview JPEG, USB trace) is **moved**
+into a `Deleted` sub-folder of the roll folder. Nothing is erased: restore a frame by moving its
+files back, or empty `Deleted` yourself. The roll record JSON is updated, and the frame counter is
+not changed; set **Number** yourself to reuse a freed number.
+
+Frames whose `.json` is still there but whose TIFF was deleted or moved outside the app are shown
+dashed and marked “file missing”; a bar above the list moves what is left of them to `Deleted`.
+
+Without the helper (plain WebUSB browser) and in a dry run the list belongs to the browser, and
+**Remove … from list** only drops the frame from it.
 
 ## Sensor averaging and exposure options
 

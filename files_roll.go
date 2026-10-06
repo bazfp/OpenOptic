@@ -311,3 +311,56 @@ func tiffPreview(f *os.File, maxDim int) ([]byte, int, int, error) {
 	}
 	return planes, ow, oh, nil
 }
+
+// POST /api/files/trash {"dir": "...", "names": [...]} -> {"moved": [...], "folder": ".../Deleted"}
+// Deleting a frame moves its files into a "Deleted" sub-folder of the roll folder: recoverable,
+// out of the roll (the roll list only reads the folder itself), never overwriting anything there.
+// Names that do not exist are skipped, so the page can list every name a frame might have.
+func handleFilesTrash(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Dir   string   `json:"dir"`
+		Names []string `json:"names"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || len(req.Names) == 0 || len(req.Names) > 10000 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	dir, err := checkDir(req.Dir)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	for _, n := range req.Names {
+		if err := checkName(n); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	bin := filepath.Join(dir, "Deleted")
+	moved := []string{}
+	for _, n := range req.Names {
+		src := filepath.Join(dir, n)
+		if st, err := os.Lstat(src); err != nil || !st.Mode().IsRegular() {
+			continue
+		}
+		if err := os.MkdirAll(bin, 0o755); err != nil {
+			http.Error(w, "cannot create the Deleted folder: "+err.Error(), http.StatusForbidden)
+			return
+		}
+		dst := filepath.Join(bin, n)
+		ext := filepath.Ext(n)
+		for i := 2; ; i++ {
+			if _, err := os.Lstat(dst); errors.Is(err, os.ErrNotExist) {
+				break
+			}
+			dst = filepath.Join(bin, fmt.Sprintf("%s (%d)%s", strings.TrimSuffix(n, ext), i, ext))
+		}
+		if err := os.Rename(src, dst); err != nil {
+			http.Error(w, fmt.Sprintf("moving %s: %v (moved so far: %s)", n, err, strings.Join(moved, ", ")), http.StatusInternalServerError)
+			return
+		}
+		moved = append(moved, n)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"moved": moved, "folder": bin})
+}

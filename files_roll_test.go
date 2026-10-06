@@ -131,3 +131,36 @@ func TestPreviewFromTiff(t *testing.T) {
 
 func strconvQuote(s string) string { b, _ := json.Marshal(s); return string(b) }
 func strconvItoa(i int) string     { b, _ := json.Marshal(i); return string(b) }
+
+func TestTrashMovesToDeletedFolder(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{"R_01.tif", "R_01.json", "R_02.tif"} {
+		os.WriteFile(filepath.Join(dir, n), []byte(n), 0o644)
+	}
+	os.MkdirAll(filepath.Join(dir, "Deleted"), 0o755)
+	os.WriteFile(filepath.Join(dir, "Deleted", "R_01.tif"), []byte("older"), 0o644) // a frame deleted before
+	call := func(body string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		handleFilesTrash(w, httptest.NewRequest(http.MethodPost, "/api/files/trash", strings.NewReader(body)))
+		return w
+	}
+	w := call(`{"dir":` + strconvQuote(dir) + `,"names":["R_01.tif","R_01.json","R_01_preview.jpg"]}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"moved":["R_01.tif","R_01.json"]`) {
+		t.Fatalf("trash: %d %s", w.Code, w.Body)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "R_01.tif")); !os.IsNotExist(err) {
+		t.Fatal("source still there")
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "Deleted", "R_01.tif")); string(b) != "older" {
+		t.Fatal("an earlier deleted file was overwritten")
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "Deleted", "R_01 (2).tif")); string(b) != "R_01.tif" {
+		t.Fatal("name clash not resolved")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "R_02.tif")); err != nil {
+		t.Fatal("other frames untouched")
+	}
+	if call(`{"dir":`+strconvQuote(dir)+`,"names":["../x.tif"]}`).Code != 400 || call(`{"dir":"relative","names":["R_02.tif"]}`).Code != 400 {
+		t.Fatal("unsafe requests must be refused")
+	}
+}
