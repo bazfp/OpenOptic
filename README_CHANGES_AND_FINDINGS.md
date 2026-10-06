@@ -637,7 +637,9 @@ The original protocol reference describes the full 3600 dpi acquisition, not the
 - Register/address/write-ack transport agrees with the supplied implementation and SANE.
 - Bulk completion uses `0x8E/0x18`. No `0x8D` bulk-end operation occurs in either capture.
 - Motor tables and hardware-shading coefficients are uploaded over bulk OUT.
-- Neither recording exercises infrared acquisition. No claim of capture-verified IR support is made.
+- Neither of these two recordings exercises infrared acquisition. The later colour-film captures do
+  (iSRD, multi-exposure): see `CAPTURE_FINDINGS_COLOUR_ME_IR.md` and the colour-film notes in
+  `PROTOCOL.md` (IR LED via GPIO27, two-sequence jobs, FEEDFSH latch, black level of the passes).
 
 ### Calibration observations
 
