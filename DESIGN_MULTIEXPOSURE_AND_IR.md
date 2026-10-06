@@ -200,13 +200,14 @@ pass processed in stripes as it arrives; that is phase 6.
 - Pass order per frame: colour, infrared, long exposure (live preview labels each).
 - IR detection always runs on the **linear** colour pass. In exposure-fusion mode both passes are
   repaired with the same mask (the long pass first resampled onto the colour grid), then fused.
-- ME offset: the long pass carries 870–2,040 counts of extra dark signal (Kodak Gold), so the merge
-  fits slope and offset per channel and scan. The image black (~470) is below the dark-frame mean
-  (~1,000) because hardware shading subtracts the dark reference; fusion uses
-  `black = darkS − offset/(slope−1)`.
-- IR repair routes by component: compact defects to exemplar inpainting, large faint ones to
-  division by t^γ (γ fitted per frame, ≈ 0.6). Real hairs and scratches on both stocks are removed;
-  coverage 0.04–0.05 % after excluding the film holder.
+- ME offset: with each pass's dark frame removed the long pass reads slope·short + 660–2,040
+  counts (Kodak Gold, varies by scan), so the merge fits slope and offset per channel and scan. The
+  offset comes from the black level, not from extra dark signal: the image black measured behind
+  the holder (409/334/386) is far below the dark frame (976/1,020/1,404), because hardware shading
+  subtracts the dark reference. Fusion uses the common black `darkS − offset/(slope−1)`, which
+  makes the passes proportional (see CAPTURE_FINDINGS_COLOUR_ME_IR.md, "Black level and
+  linearity").
+- IR repair: superseded by section 10 (hysteresis detection, visibility gate, routing by width).
 - Tests: `tests/enhance.test.cjs` (synthetic ground truth), `tests/multipass_roll.test.cjs`
   (whole-frame pipeline both modes), `tests/scan_options.test.cjs` and `tests/dummy_lines.test.cjs`
   (×3 matches the capture op for op).
@@ -237,3 +238,40 @@ Graded on both iSRD captures (Kodak Gold, Lucky) with per-defect residuals and c
 - Result: ~480 (Gold) and ~340 (Lucky) defects repaired; repaired areas within the grain for
   98–99 % by the residual measure; scratches, hairs, fibre webs and smudges removed (crops in
   ir-repair-real-scans.png). Repair now takes ~10 s per 3600 dpi frame (detection ~23 s).
+
+## 11. Validation of the multi-exposure modes
+
+Run on a simulated negative with known values (orange-mask channel balance, densities 0–2.4, the
+measured noise model and black behaviour, 3× red clipping) and on the Kodak Gold capture.
+
+**Extended range (linear merge)**
+
+| Check | Simulation | Kodak Gold |
+|---|---|---|
+| Fit vs truth | slope within 0.3 %, offset within ~10 counts | 3.115–3.120 |
+| Bias of the merge | ≤ 4.6 counts at every level | ±20 counts in the bulk; +45 (blue) to ~+100 (red, few pixels) counts in the densest parts of the negative |
+| Noise | within 2 % of the inverse-variance optimum; 2.6–2.9× lower than 1× | 0.48–0.72× of 1× in shadows and mid-tones (grain is common to both passes) |
+| Clipped long-pass samples | output = 1× exactly (all of them) | red highlights 1.00× (unchanged) |
+| Fade-out at 90–98 % of full scale | no step | smooth, ≤ 42 counts at ~18,000 (0.2 %) |
+| Registration | — | residual < 1 px |
+
+The only systematic error is the straight-line relation between the passes near black: about
+3–4 % (≈ 0.015 D) high in blue in the densest areas. A level-dependent mapping (fitted per level
+band on smoothed data) instead of one affine fit would remove it. Not implemented yet.
+
+**Exposure fusion (negatives)**
+
+| Check | Simulation | Kodak Gold |
+|---|---|---|
+| Output | linear negative, not inverted, black 0, no clipping | same; 0 pixels at full scale |
+| Black recovered | 626/452/543 vs true 625/458/540 | 664/465/538 |
+| Colour vs truth / 1× (log ratio) | median −0.005 (R/G), −0.023 (B/G); p5–p95 width 0.05 / 0.09 | median 0.002 (R/G), 0.007 (B/G); p5–p95 within ±0.03 |
+| Tone gain (green) | 1.05× at the film base rising to ~2.65× (dense) | 1.25× thin, 1.7× mid, 2.5–2.8× dense |
+| Local detail | r 0.94–0.96 vs truth | — |
+| Pixels below the fusion black (clamped) | — | 0.06–0.32 % |
+
+Fusion lifts dense areas of the negative (scene highlights) towards the long pass's level while
+keeping local detail, which after inversion compresses highlights: the intended HDR look. A first
+simulation assumed the long-pass offset was extra dark signal (true black = dark frame); under
+that wrong model the fusion black is mis-estimated and colours shift strongly. The holder
+measurement rules that model out.

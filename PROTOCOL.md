@@ -79,6 +79,16 @@ the software received `0x08` 4 ms after first opening the read (a latched sensor
 2.571 s after positioning move 1 started, and stopped the move 0.8 ms later. The datasheet describes
 GPIO1-4 as "hot key" inputs latched until read; this scanner sets GPIO1-7 as inputs (0x6F = 0x80).
 
+**Reading it from a host.** Only one interrupt read can be pending; the helper answers a second
+concurrent read with "busy" (HTTP 429) and a read that times out with "no event" (HTTP 204), which
+is normal while idle. A pending read neither blocks nor is blocked by control and bulk traffic, and
+no event is lost while none is pending: the scanner holds the change until the next read (it
+arrived 4 ms after the vendor first opened the read). After a reconnect the old read can still be
+pending for up to its timeout, so the first new reads may come back busy. As a fallback the same
+button state is visible by polling register 0x6D while the scanner is idle (select 0x6D, then
+read): the button's bit drops while it is held. Polling must not interleave with any other
+register access, since a read is two transfers (select, then read).
+
 ---
 
 **Colour-film captures (multi-exposure, iSRD).** Two further 3600 dpi captures confirm the
@@ -99,8 +109,16 @@ sequence above and add three facts; details in `CAPTURE_FINDINGS_COLOUR_ME_IR.md
   set (the 416 polls collapse to one such wait). Waiting for the recorded 0xFC stalled the
   infrared pass until the 60 s readiness timeout.
 - **Multi-exposure is two complete sequences** (Kodak Gold capture): pass 2 recalibrates at 1×
-  and differs only in its main scan (the four changes above). The long pass carries extra dark
-  signal: long = slope·short + offset, offsets 870–2,040 counts with each pass's dark frame removed.
+  and differs only in its main scan (the four changes above). With each pass's dark frame removed,
+  long = slope·short + offset with slopes 3.11–3.12 and offsets 660–1,830 counts (870–2,040 in the
+  first fit; it varies by scan). The offset is **not** extra dark signal in the long pass: behind
+  the opaque film holder the 1× pass reads 409/334/386 (R/G/B) while its dark frame reads
+  976/1,020/1,404, so the dark frame (taken before hardware shading) overestimates the image black
+  by 570–1,020 counts. The 3× pass reads 662/357/494 behind the holder: its black is only 20–250
+  counts higher. A common black B = darkS − offset/(slope − 1) (≈ 630/460/540 here) makes the two
+  passes proportional in the mid-tones; near black they are not exactly proportional (the 3× pass,
+  mapped onto the 1× scale, reads up to ~5 % high in the densest parts of the negative). Use an
+  affine or level-dependent relation between passes, never a plain ×k.
 - Calibration levels and AFE gains do not depend on the film stock (Lucky 200 and Kodak Gold 200
   agree within 2 % and one gain step); the references are read through the holder.
 - The interrupt endpoint reports `0x08` (GPIO4 position sensor), `0x04` (front button A, GPIO3)
@@ -126,7 +144,16 @@ sequence above and add three facts; details in `CAPTURE_FINDINGS_COLOUR_ME_IR.md
 Typical values: `0xDC` parked at home, idle; `0xD5` moving; `0xF5` feed finished, motor still
 energised; `0xF4` feed finished and motor released; `0xE5`/`0xA5` during a scan, where the 0x40 bit
 clearing signals that image data can be read; `0xA1` at the end of a scan while the carriage is
-returning.
+returning. With the white LED off (infrared jobs, or LED switched off between frames) the same
+states read 0x04 lower: `0xD8` parked, `0xF0` feed finished and released.
+
+**FEEDFSH is a latch, not a state.** It is set when a move ends (including the chip's own
+auto-return after a scan) and cleared by the next motor start. After this app's colour pass ended
+with the auto-return, the next sequence began at `0xE8` (FEEDFSH latched, home, LED off); after
+the app's own homing it read `0xDC` (FEEDFSH clear). The vendor's iSRD job began at `0xB5`
+(carriage still returning, motor on) and then `0xFC`. A replay must therefore not wait for a
+recorded FEEDFSH before the sequence has started a move of its own; before that, wait only while
+MOTORENB is set.
 
 ### 0x40 — secondary status
 Polled only at the very end of a scan. Values `0x33 → 0x31 → 0x33 → 0x37` were observed; the bit
@@ -310,6 +337,29 @@ Per resolution, with the durations the captures actually took:
 
 `LINCNT` is twice the delivered line count at every resolution, whatever LINESEL is.
 
+**Dropping dummy lines and lengthening exposure.** Both change only the main scan's start write and
+its scan tables (slots 0–2: start step 25,252, then the cruise period). To keep the same steps per
+line, the cruise period C is scaled with the line time:
+
+```
+C' = C · k · (LINESEL' + 1) / (LINESEL + 1)      k = exposure multiplier (LPERIOD' = k · LPERIOD)
+```
+
+| Main scan | LINESEL | LPERIOD | Cruise | Line time | 3600 dpi | 7200 dpi | Host rate 3600 / 7200 |
+|---|---|---|---|---|---|---|---|
+| as recorded | 1 / 2 | 14,000 / 42,000 | 14,000 / 42,000 | 11.2 / 16.8 ms | 79 s | 3 min 57 s | 2.75 / 3.66 MB/s |
+| no dummy lines | 0 | 14,000 | 7,000 / 14,000 | 5.6 ms | 39.5 s | 79 s | 5.49 / 10.98 MB/s |
+| exposure ×2 | 0 | 28,000 | 14,000 | 11.2 ms | 79 s | — | 2.75 MB/s |
+| exposure ×3 (= SilverFast's ME pass, byte for byte) | 0 | 42,000 | 21,000 | 16.8 ms | 118.5 s | — | 1.83 MB/s |
+| exposure ×4 | 0 | 56,000 | 28,000 | 22.4 ms | 158 s | — | 1.37 MB/s |
+
+Exposure > 1× also sets BUFSEL (0x20) to 0x08, as the vendor does. Dummy lines do not lengthen the
+exposure (the recorded white references, read with 1, 2 and 5 dummy lines, came out at the same level), and
+image size, LINCNT and the colour delays are unchanged. The CCD integration time is the line time,
+so a k× pass necessarily takes k times a no-dummy-line pass. Each extra complete sequence (an IR
+or long-exposure pass) adds recalibration and positioning: ~20 s in the vendor captures (the app's time estimate assumes
+~15 s).
+
 **The host must keep up.** MAXWD (0x35–0x37) sets the buffer-full threshold and ACDCDIS (0x02 bit
 6) is 0 in every capture, which *enables* backtracking: "If available buffer size < MAXWD, then
 buffer full state will be set. The scanner execute backtracking." The carriage then reverses by
@@ -330,10 +380,15 @@ line at a different time. Delay in delivered lines, measured by cross-correlatio
 |---|---|---|---|
 | prescan (2880 lpi) | 0 | 9.84 | 19.30 |
 | full 3600 (7200 lpi) | 0 | 24.22 | 48.21 |
+| full 7200 (14400 lpi), scaled from 7200 lpi, not measured | 0 | 48.44 | 96.42 |
 
 They scale with vertical sampling (19.30 × 2.5 = 48.25), i.e. a fixed physical spacing of roughly
 12 and 24 lines at 3600 lpi. Align by shifting G and B **earlier** by those amounts; the fractional
-part matters (integer rounding leaves up to 0.4 line of colour fringing).
+part matters (integer rounding leaves up to 0.4 line of colour fringing). On colour negatives
+the per-scan cross-correlation is weak (confidence 0.06–0.19: the orange mask decorrelates the
+channels), so these calibrated values are the fallback, used when they agree with the profile's
+whole-line shifts within one line. Being a physical row spacing, the delays should not depend on
+LINESEL or exposure (the 3× capture kept 0/24/48); untested on hardware without dummy lines.
 
 ## 7. Scan sequence
 
@@ -415,3 +470,9 @@ the same at every resolution.
 - Register 0x40's bits.
 - The exact AFE search algorithm (only its observed steps are recorded above).
 - Whether the scan window can be moved beyond optical pixel 10463, and what shading would be needed.
+- Why the 1× and 3× passes are not exactly proportional near black (CCD/AFE non-linearity, flare, or
+  dark current at 3× integration); measured only on one Kodak Gold frame.
+- Whether FEEDFSH is set after the app's own homing stop (the polls read 0xDC for the ~10 ms
+  observed); the replay no longer depends on it.
+- Infrared and long-exposure sequences exist only at 3600 dpi (no 7200 dpi capture), and no
+  capture shows dropped dummy lines or exposure > 1× together with buffer-full backtracking.

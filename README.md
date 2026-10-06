@@ -153,6 +153,18 @@ folder is chosen, the roll name and digits are taken from its frame names and th
 moves past the last frame. Frames without a stored preview get one (and a thumbnail) from their
 TIFF, downsampled by the helper, one at a time in the background.
 
+## How the preview is rendered
+
+The on-screen preview, thumbnails and preview JPEG are rendered from the linear TIFF data with no
+stored calibration: per channel, ignoring a 2 % margin, the 0.1 % and 99.9 % levels (`lo`, `hi`)
+are taken from the frame itself; negatives are shown as `log(hi/v) / log(hi/lo)` with a 1/1.4
+gamma, slides as a linear stretch with 1/2.2 gamma. This balances colour per frame (the orange
+mask included) but does not measure the film base, varies from frame to frame, and is not saved in
+the TIFF or its JSON. The scanner-side calibration (hardware shading, black-level correction,
+recorded AFE gains) is already in the TIFF values. For darktable's negadoctor the equivalent
+inputs would be Dmin = `hi`, Dmax = `log10(hi/lo)` and an offset from `lo`, ideally with Dmin taken
+from the unexposed film base at the frame edge rather than from the picture.
+
 ## Frame previews
 
 Selecting a saved frame shows a 2400 px preview (box-filtered from the full frame). These previews
@@ -260,8 +272,8 @@ calibration stays at 1×). The ×3 pass is byte-for-byte the register state of S
 multi-exposure pass. Two modes:
 
 - **Extended range** (linear): the long pass is registered (sub-pixel) to the normal pass, fitted
-  per channel as `long = slope·short + offset` (Kodak Gold: slopes 3.06–3.12, offsets 870–2,040
-  counts of dark signal), and the two are blended by inverse variance using a noise model from the
+  per channel as `long = slope·short + offset` (Kodak Gold: slopes 3.06–3.12, offsets 660–2,040
+  counts, from the black level: the dark frame overestimates the image black), and the two are blended by inverse variance using a noise model from the
   calibration frames. The long pass fades out at 90–98 % of full scale, so clipped samples (the
   orange-mask red channel on Lucky film) come from the normal pass only. Output stays linear 16-bit
   at the normal-pass scale, ready for negative converters. On Kodak Gold shadow noise drops by

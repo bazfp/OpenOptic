@@ -105,12 +105,13 @@ Reproduce with `tools/capture_extract.py` (register/AFE state per read, tables, 
 - Defects on this frame: 0.033 % of pixels more than 10 % darker than their surroundings in IR.
   Scratches and dust specks match bright streaks and specks in the inverted colour image.
 
-## Issue found in the app
+## Issue found in the app (fixed)
 
 - Per-scan colour delay measurement has low confidence on colour negative (0.06–0.19) and falls
   back to the profile's whole-line values 24/48. The B&W captures measured 24.22/48.21, so colour
-  film currently loses up to 0.2 line of colour registration. Fix: fall back to the measured
-  fractional constants instead of the rounded profile values.
+  film lost up to 0.2 line of colour registration. Fixed: the fallback is now the measured
+  fractional constants (24.22/48.21 at 7200 lpi, 9.84/19.30 at 2880, 48.44/96.42 at 14400), used
+  when they agree with the profile's whole-line shifts within one line.
 
 ## Kodak Gold 200: full two-pass multi-exposure and a second iSRD capture
 
@@ -125,9 +126,10 @@ Two more 3600 dpi captures, Kodak Gold 200 colour negative:
 - **Pass-to-pass offset** (multi-exposure): under one raw line here (r = 0.993 at zero offset).
 - **Long-pass black offset.** With each pass's own dark-frame level subtracted, the 3× pass is
   an affine function of the 1× pass: long = 3.11 · short + 873 (R), 3.12 · short + 1,185 (G),
-  3.06 · short + 2,040 (B) counts. The extra offset is most likely dark signal from the 3×
-  integration time, which the 1×-exposure dark frame does not remove. The merge must fit slope
-  and offset per channel and scan, not divide by 3.
+  3.06 · short + 2,040 (B) counts. The offset is not dark signal of the 3× pass (see "Black level and
+  linearity" below): the dark frame overestimates the image black, and a common black
+  B = darkS − offset/(slope − 1) makes the passes proportional in the mid-tones. The merge must
+  fit slope and offset per channel and scan, not divide by 3.
 - **IR on Kodak Gold** behaves as on Lucky: same register changes (0x03 = 0xAF, 0xA8 = 0x27, dark
   frame 0x23), IR-to-colour offset +1.31 to +1.46 rows and +0.56 to +0.74 column (Lucky: +2.3 to
   +2.5, +0.8: it varies per scan), dye crosstalk log IR = 0.057 · log R (Lucky 0.065), 0.033 % of
@@ -156,3 +158,46 @@ Two more 3600 dpi captures, Kodak Gold 200 colour negative:
   Kodak Gold is denser, especially in blue (median 4.4 % of full scale), so multi-exposure helps it
   more than Lucky. The different orange masks are handled per frame by the preview's levels and
   by negative converters; nothing in scanning is stock-specific.
+
+## Black level and linearity of the two exposures (Kodak Gold, 1× frame 07 and 3× frame 15)
+
+Measured on the darkest 0.3 % of the frame, which lies behind the opaque film holder (no light):
+
+| | R | G | B |
+|---|---|---|---|
+| 1× pass, dark frame (LED off, before shading) | 976 | 1,020 | 1,404 |
+| 1× pass, behind the holder | 409 | 334 | 386 |
+| 3× pass, dark frame | 980 | 1,034 | 1,395 |
+| 3× pass, behind the holder | 662 | 357 | 494 |
+| Fit, long − darkL = k·(short − darkS) + offset | 3.120, 662 | 3.117, 1,176 | 3.115, 1,830 |
+| Common black B = darkS − offset/(k − 1) | 664 | 465 | 538 |
+
+- The image black is 570–1,020 counts **below** the dark frame: the hardware shading subtracts its
+  dark reference after the dark frame is read. The 3× pass's black is 20–250 counts above the 1×.
+- Mapped onto the 1× scale by the fit, the 3× pass agrees with the 1× within ±20 counts over the
+  bulk of the picture, but reads higher at the extremes: up to +60 (blue) and +100–130 (red) counts
+  in the densest parts of the negative (few pixels in red), and +90 in green at 8,000–16,000. The
+  relation is affine only to first order.
+- Noise in flat areas (film grain included): an inverse-variance merge of the two passes brings it
+  to 0.48–0.72× of the 1× pass in shadows and mid-tones of the negative; 1.00× where the 3× red is
+  clipped.
+- Pass-to-pass registration (green, sub-pixel): 0.54 rows, 0.01 column on this frame; residual
+  after the shift below one pixel.
+
+## Infrared data (Kodak Gold and Lucky iSRD captures)
+
+- **Registration of the IR pass**, measured on the defects themselves (output pixels, after line
+  averaging): +0.51 rows / −0.87 column (Kodak Gold), +0.96 / −0.97 (Lucky). It varies per scan.
+- **Transmission noise**: with t = IR / local clean background (after the dye ghost is removed),
+  clean film reads t ≈ 0.98–0.99 with σ = 0.0074 (Gold) and 0.0103 (Lucky) per pixel, 0.0043 and
+  0.0057 on a 3×3 mean.
+- **Defect depth**: hairline scratches and most dust read t ≈ 0.92–0.95 — 8–15σ deep but above a
+  0.9 cut. The darkest 0.01 % of film pixels read t ≈ 0.79 (Gold) and 0.85 (Lucky): hairs, fibres,
+  opaque dust. The IR footprint of a scratch is ~10 px
+  wide where its visible mark is 2–3 px; a sharp speck often sits inside a soft IR ring.
+- **IR-only marks**: about a quarter of the IR defects (158 of 567 on Gold, 79 of 350 on Lucky) do
+  not show in the colour image: soft blobs and rings, consistent with dust off the film plane.
+- **Dye crosstalk**: log IR ≈ 0.056–0.065 · log R on both stocks (cyan dye), as reported above.
+- **Frame edge**: at 3600 dpi the right-hand edge of the (mirrored) aligned frame, from about
+  column 4,990, shows the inter-frame gap (clear, unexposed film base) next to the holder edge.
+  It could serve to measure the film base colour (Dmin) for negative converters; not yet used.
