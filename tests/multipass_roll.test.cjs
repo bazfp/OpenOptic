@@ -39,7 +39,7 @@ const lamp={dark:{mean:dk,noise:{mean:dk,tvar:[2400,2400,2400]}},shading:{mean:[
     assert.equal(me.mode,mode); assert(me.fits.every(f=>Math.abs(f.slope-3.1)<0.15),'fits '+JSON.stringify(me.fits));
     assert(ir.registration.ok&&Math.abs(ir.registration.dy+1)<0.5,'IR content 2 raw lines low is moved up one output row: '+JSON.stringify(ir.registration));
     if(mode==='range'){ assert(ir.repair.filledDefects>=15,'defects filled: '+JSON.stringify(ir.repair)); assert.deepEqual(rec.enhanced,['ME','IR']); }
-    else assert(me.fusion&&/positive/.test(me.fusion.output));
+    else assert(me.fusion&&/negative/.test(me.fusion.output)&&!/positive/.test(me.fusion.output),'fusion output is a negative');
     const tif=saved.get('mp_01.tif'); assert(tif.length>P*370*6,'TIFF holds the frame');
     console.log(`${mode}: ${names.join(', ')}; progress ${[...new Set(steps.map(x=>x[0]))].join(' → ')}; slopes ${me.fits.map(f=>f.slope).join('/')}; IR offset ${ir.registration.dy.toFixed(2)}/${ir.registration.dx.toFixed(2)}${ir.repair?`; ${ir.repair.filledDefects} defects filled`:''}`);
   }

@@ -210,3 +210,8 @@ pass processed in stripes as it arrives; that is phase 6.
 - Tests: `tests/enhance.test.cjs` (synthetic ground truth), `tests/multipass_roll.test.cjs`
   (whole-frame pipeline both modes), `tests/scan_options.test.cjs` and `tests/dummy_lines.test.cjs`
   (×3 matches the capture op for op).
+
+- Exposure fusion works on the **negatives** (since the Kodak Gold review): no inversion or
+  per-channel levels before fusing; gamma-encoded blend, decoded to a linear negative TIFF. The
+  first version fused inverted, levelled positives and saved a display-referred positive, which
+  took the inversion and colour balance away from the negative converter.
