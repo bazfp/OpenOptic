@@ -79,7 +79,7 @@
       const irgb=new Uint16Array(I.data.buffer,I.data.byteOffset,I.data.byteLength>>1), ir=new Uint16Array(W*H);
       for(let i=0;i<W*H;i++) ir[i]=irgb[i*3];          // IR is read by the red row
       det=await Enhance.runAsync(Enhance.irDetectSteps(ir,rgb,W,H,{darkC:darkS}),stage('detect')); mask=Enhance.dilate(det.core,W,H,2);
-      info.infrared={mode:s.infrared,registration:det.registration,ghost:det.ghost,defectCoverage:det.coverage,irMedian:det.irMedian,irBlocked:det.irBlocked};
+      info.infrared={mode:s.infrared,registration:det.registration,noise:det.noise,ghost:det.ghost,defectCoverage:det.coverage,irMedian:det.irMedian,irBlocked:det.irBlocked};
       if(det.irBlocked){ info.infrared.note='infrared blocked by the film (B&W silver image or Kodachrome?): no repair'; log('infrared: the film blocks IR (silver image?); not repaired'); }
       { const out=new Uint16Array(W*H); for(let i=0;i<W*H;i++) out[i]=Math.min(65535,Math.max(0,Math.round(det.ir[i]))); p.irPlane=out; }   // saved as the TIFF's 4th channel
       log(`infrared: ${det.coverage} % defects, offset ${det.registration.dy.toFixed(2)}/${det.registration.dx.toFixed(2)} px${det.registration.ok?'':' (not registered: '+det.registration.reason+')'}`);
@@ -88,9 +88,9 @@
     let repairs=0; const nRepairs=fusing?2:1;
     const repair=async(img,label)=>{ const on=stage('repair'), k=repairs++;
       const r=await Enhance.runAsync(Enhance.irRepairSteps(img,W,H,det),f=>on((k+f)/nRepairs)); mask=r.mask;
-      info.infrared.repair={inpaintedPixels:r.inpainted,filledDefects:r.filledComponents,dividedDefects:r.dividedComponents,attenuationExponent:r.gamma,method:r.method,
-        note:'compact defects filled by exemplar inpainting (patch-based, keeps grain); large faint ones divided by IR transmission^γ'};
-      log(`infrared repair${label}: ${r.filledComponents} defects filled (${r.inpainted} px), ${r.dividedComponents} large ones corrected`); };
+      info.infrared.repair={inpaintedPixels:r.inpainted,filledDefects:r.filledComponents,dividedDefects:r.dividedComponents,confirmedDefects:r.confirmed,skippedInvisible:r.invisible,attenuationExponent:r.gamma,method:r.method,
+        note:'IR defects found by hysteresis against the scan\'s own IR noise; repaired only where they show in the colour image; the visibly damaged pixels (whole footprint for broad smudges) filled by exemplar inpainting, which keeps grain; only very large broad smudges divided by IR transmission^γ'};
+      log(`infrared repair${label}: ${r.filledComponents} defects filled (${r.inpainted} px), ${r.dividedComponents} large smudges corrected, ${r.invisible} IR-only marks left alone (not visible in colour)`); };
     // 2. multi-exposure
     if(acq.long){
       await tick('long-align');

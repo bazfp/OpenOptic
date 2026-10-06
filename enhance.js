@@ -263,11 +263,26 @@
     const excluded=morph(big,W,H,2*(size+9)+1,true), m=size+9;
     yield 0.95;
     for(let y=0;y<H;y++) for(let x=0;x<W;x++) if(y<m||x<m||y>=H-m||x>=W-m) excluded[y*W+x]=1;   // and the image border
-    const core=new Uint8Array(W*H); let defects=0, film=0;
-    for(let i=0;i<t.length;i++){ t[i]=In[i]/Math.max(1,bg[i]); if(excluded[i]) continue; film++; if(t[i]<threshold){ core[i]=1; defects++; } }
+    for(let i=0;i<t.length;i++) t[i]=In[i]/Math.max(1,bg[i]);
+    // Defects, by hysteresis against this scan's own IR noise: real scans showed hairline
+    // scratches and dust at t ≈ 0.92-0.95, far above the noise (σ ≈ 0.004-0.006 on a 3×3 mean)
+    // yet missed by a fixed 0.9 cut. Seeds lie 5σ (at least 2 %) below the clean level, and grow
+    // through neighbours 2.5σ (at least 1 %) below it, so a scratch is followed along its fainter
+    // parts while isolated noise never starts a defect. threshold (absolute) still seeds as before.
+    const ts=boxBlur(t,W,H,1); yield 0.96;
+    const sample=[]; for(let y=m;y<H-m;y+=3) for(let x=m;x<W-m;x+=3){ const i=y*W+x; if(!excluded[i]) sample.push(ts[i]); }
+    sample.sort((p,q)=>p-q);
+    const level=sample[sample.length>>1]||1, dev=sample.map(v=>Math.abs(v-level)).sort((p,q)=>p-q), sigma=1.4826*(dev[dev.length>>1]||0.005);
+    const seedAt=level-Math.max(0.02,5*sigma), growAt=level-Math.max(0.01,2.5*sigma);
+    const core=new Uint8Array(W*H), queue=new Int32Array(W*H); let qn=0, defects=0, film=0;
+    for(let i=0;i<W*H;i++){ if(excluded[i]) continue; film++; if(ts[i]<seedAt||t[i]<threshold){ core[i]=1; queue[qn++]=i; } }
+    for(let q=0;q<qn;q++){ const i=queue[q], y=(i/W)|0, x=i-y*W;
+      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){ const yy=y+dy, xx=x+dx; if(yy<0||yy>=H||xx<0||xx>=W) continue;
+        const j=yy*W+xx; if(!core[j]&&!excluded[j]&&ts[j]<growAt){ core[j]=1; queue[qn++]=j; } } }
+    for(let i=0;i<W*H;i++) defects+=core[i];
     // Silver-image film (B&W, Kodachrome) blocks IR: the "ghost" is then the whole picture.
     const irBlocked=ghost>0.35||irMedian<0.25*FS;
-    return {t,core,ir:I,registration:reg,ghost:+ghost.toFixed(4),coverage:+(defects/Math.max(1,film)*100).toFixed(4),filmFraction:+(film/t.length).toFixed(3),irMedian:Math.round(irMedian),irBlocked};
+    return {t,core,ir:I,registration:reg,noise:{level:+level.toFixed(4),sigma:+sigma.toFixed(4),seedAt:+seedAt.toFixed(4),growAt:+growAt.toFixed(4)},ghost:+ghost.toFixed(4),coverage:+(defects/Math.max(1,film)*100).toFixed(4),filmFraction:+(film/t.length).toFixed(3),irMedian:Math.round(irMedian),irBlocked};
   }
   function dilate(mask,W,H,r=1){
     const out=new Uint8Array(W*H);
@@ -310,21 +325,76 @@
     return est.map(a=>{ if(a.length<30) return 0.62; a.sort((p,q)=>p-q); return +Math.min(1,Math.max(0.3,a[a.length>>1])).toFixed(3); });
   }
   function irRepair(...a){ return runSync(irRepairSteps(...a)); }
-  function* irRepairSteps(colour,W,H,det,{maxFillArea=4000,grow=2,radius=36,candidates=48,maxExemplar=600000,seed=1}={}){
-    const {t,core}=det, mask=dilate(core,W,H,grow);
+  function* irRepairSteps(colour,W,H,det,{maxFillArea=20000,thick=10,broad=6,grow=2,confirmZ=4,minDeviation=0.02,opaqueT=0.85,size=15,radius=36,candidates=48,maxExemplar=1500000,seed=1}={}){
+    const {t}=det;
+    // 1. Only repair what the colour image shows. Real scans have many IR dips that do not appear
+    //    in the visible image (dust off the film plane, rings from out-of-focus specks); repairing
+    //    them can only add artefacts. Visibility is measured like the IR defects: v = closing(log
+    //    colour) - log colour, which responds to specks and lines darker than their surroundings
+    //    in the negative but not to edges larger than the closing (a ring straddling the frame
+    //    border must not count as visible). A defect is kept when its mean v exceeds the ring's by
+    //    ≥ 2 % and ≥ confirmZ standard errors, or when it is nearly opaque in IR (t < opaqueT).
+    const cc=components(det.core,W,H), nC=cc.sizes.length, box=new Int32Array(nC*4).fill(-1), minT=new Float32Array(nC).fill(1);
+    for(let i=0;i<W*H;i++){ const k=cc.label[i]; if(!k) continue; const y=(i/W)|0, x=i-y*W, b=k*4;
+      if(box[b]<0){ box[b]=y; box[b+1]=y; box[b+2]=x; box[b+3]=x; } else { if(y<box[b])box[b]=y; if(y>box[b+1])box[b+1]=y; if(x<box[b+2])box[b+2]=x; if(x>box[b+3])box[b+3]=x; }
+      if(t[i]<minT[k]) minT[k]=t[i]; }
+    const near=dilate(det.core,W,H,3), keep=new Uint8Array(nC); let confirmed=0, invisible=0;
+    const Lc=new Float32Array(W*H); for(let i=0;i<W*H;i++){ let a=0; for(let c=0;c<3;c++) a+=Math.log(Math.max(1,colour[i*3+c])+64); Lc[i]=a/3; }
+    yield 0.03;
+    const vis=closing(Lc,W,H,size); for(let i=0;i<W*H;i++) vis[i]-=Lc[i];
+    yield 0.1;
+    for(let k=1;k<nC;k++){
+      if(minT[k]<opaqueT){ keep[k]=1; confirmed++; continue; }
+      const b=k*4, R=6, y0=Math.max(0,box[b]-R), y1=Math.min(H-1,box[b+1]+R), x0=Math.max(0,box[b+2]-R), x1=Math.min(W-1,box[b+3]+R);
+      let si=0, sr=0, sr2=0, ni=0, nr=0;
+      for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){ const i=y*W+x, v=vis[i];
+        if(cc.label[i]===k){ ni++; si+=v; } else if(!near[i]){ nr++; sr+=v; sr2+=v*v; } }
+      if(nr<20){ keep[k]=1; confirmed++; continue; }
+      const mr=sr/nr, sd=Math.sqrt(Math.max(1e-8,sr2/nr-mr*mr)), d=si/ni-mr;
+      const ok=d>=minDeviation&&d>=confirmZ*sd*Math.sqrt(1/ni+1/nr);
+      if(ok){ keep[k]=1; confirmed++; } else invisible++;
+    }
+    // 2. Fill only what is visibly damaged: the IR footprint of a speck or scratch is wider and
+    //    softer than its visible mark (a sharp speck sits in a soft IR ring; a 2-px scratch has a
+    //    10-px IR band), and a hole wider than needed can drag an edge across. Within each kept
+    //    defect, pixels whose visible response exceeds the grain (median + 3 MAD of v over the frame)
+    //    or that are near-opaque in IR form the hole (grown by `grow` below). A kept defect with no
+    //    such pixel (a faint smudge) keeps its whole IR footprint.
+    const vs=[]; for(let i=0;i<W*H;i+=37) vs.push(vis[i]); vs.sort((p,q)=>p-q);
+    const vmed=vs[vs.length>>1], vmad=vs.map(v=>Math.abs(v-vmed)).sort((p,q)=>p-q)[vs.length>>1], visAt=vmed+3*1.4826*vmad;
+    //    Broad defects (≥ 2·broad+1 px across: smudges, water marks) also keep their whole footprint,
+    //    since gating a faint blotch pixel by pixel leaves it patchy.
+    const cf=new Float32Array(W*H); for(let i=0;i<W*H;i++) cf[i]=det.core[i]&&keep[cc.label[i]]?1:0;
+    const broadAt=morph(cf,W,H,2*broad+1,false), whole=new Uint8Array(nC);
+    for(let i=0;i<W*H;i++) if(broadAt[i]>0.5) whole[cc.label[i]]=1;
+    const core=new Uint8Array(W*H), hasVisible=new Uint8Array(nC);
+    for(let i=0;i<W*H;i++){ const k=cc.label[i]; if(k&&keep[k]&&!whole[k]&&(vis[i]>visAt||t[i]<opaqueT)){ core[i]=1; hasVisible[k]=1; } }
+    for(let i=0;i<W*H;i++){ const k=cc.label[i]; if(k&&keep[k]&&(whole[k]||!hasVisible[k])) core[i]=1; }
+    yield 0.15;
+    // 3. Route by width, not area: thin defects (scratches, hairs, fibres; nothing survives an
+    //    erosion of radius `thick`) are inpainted however long they are, since a scratch carries
+    //    no usable signal and exemplar fill restores grain and edges. Only broad faint smudges
+    //    larger than maxFillArea are corrected by IR transmission (RGB / t^γ).
+    const mask=dilate(core,W,H,grow);
     const gamma=attenuationExponent(colour,W,H,t,core,mask);
-    const {label,sizes}=components(mask,W,H), hole=new Uint8Array(W*H);
+    const mf=new Float32Array(W*H); for(let i=0;i<W*H;i++) mf[i]=mask[i];
+    const wideAt=morph(mf,W,H,2*thick+1,false);
+    yield 0.25;
+    const {label,sizes}=components(mask,W,H), wide=new Uint8Array(sizes.length);
+    for(let i=0;i<W*H;i++) if(wideAt[i]>0.5) wide[label[i]]=1;
+    const divide=new Uint8Array(sizes.length), hole=new Uint8Array(W*H);
     let attenuated=0, filledComponents=0, dividedComponents=0;
-    const big=new Uint8Array(sizes.length); for(let k=1;k<sizes.length;k++){ big[k]=sizes[k]>maxFillArea?1:0; if(big[k]) dividedComponents++; else filledComponents++; }
+    for(let k=1;k<sizes.length;k++){ divide[k]=wide[k]&&sizes[k]>maxFillArea?1:0; if(divide[k]) dividedComponents++; else filledComponents++; }
     for(let i=0;i<W*H;i++){ const k=label[i]; if(!k) continue;
-      if(!big[k]){ hole[i]=1; continue; }
+      if(!divide[k]){ hole[i]=1; continue; }
       if(core[i]){ attenuated++; const tt=Math.max(0.25,t[i]);
         for(let c=0;c<3;c++){ const j=i*3+c, v=colour[j]/Math.pow(tt,gamma[c]); colour[j]=v>FS?FS:Math.round(v); } } }
     let holes=0; for(let i=0;i<W*H;i++) holes+=hole[i];
-    yield 0.2;
-    const filled=yield* inpaintSteps(colour,W,H,hole,{radius,candidates,maxExemplar,seed},0.2,0.8);
-    return {attenuated,inpainted:holes,gamma,filledComponents,dividedComponents,method:filled.method,exemplar:filled.exemplar,diffused:filled.diffused,mask};
+    yield 0.3;
+    const filled=yield* inpaintSteps(colour,W,H,hole,{radius,candidates,maxExemplar,seed},0.3,0.7);
+    return {attenuated,inpainted:holes,gamma,filledComponents,dividedComponents,confirmed,invisible,method:filled.method,exemplar:filled.exemplar,diffused:filled.diffused,mask};
   }
+
   function inpaint(...a){ return runSync(inpaintSteps(...a)); }
   function* inpaintSteps(colour,W,H,hole,{radius=36,candidates=48,maxExemplar=400000,seed=1}={},p0=0,span=1){
     let rnd=seed>>>0||1; const rand=()=>((rnd=(rnd*1664525+1013904223)>>>0)/4294967296);
