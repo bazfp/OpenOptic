@@ -107,10 +107,9 @@ Every saved frame gets a full-size preview, with its record a click away:
 
 ![A frame selected in the roll with its file details expanded](docs/images/screenshot-frame-info.jpg)
 
-Portrait frames are rotated for you, and the advanced options (sensor sampling, line doubling,
-front-button actions) sit tucked away until you want them:
+Portrait frames are rotated for you:
 
-![A portrait frame with the advanced options open](docs/images/screenshot-advanced.jpg)
+![A portrait frame shown upright in the preview](docs/images/screenshot-advanced.jpg)
 
 The [user guide](docs/USER_GUIDE.md) covers every option in detail.
 
