@@ -8,7 +8,7 @@ build:
 	CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o opticfilm .
 
 dist:
-	VERSION=$(VERSION) ./build.sh
+	VERSION=$(VERSION) sh ./build.sh
 
 test: vet test-go test-js
 
