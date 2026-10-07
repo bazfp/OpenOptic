@@ -332,7 +332,7 @@
   // peak fit for sub-line precision. Falls back to the profile value when the image has
   // too little vertical structure to trust.
   // Channel delays measured on B&W film, where all three channels see the same picture (sub-line
-  // cross-correlation, PROTOCOL.md section 6). They follow from the spacing of the sensor rows, so
+  // cross-correlation, docs/PROTOCOL.md section 6). They follow from the spacing of the sensor rows, so
   // they hold for any film. Colour negative gives too little correlation between channels to
   // measure per scan; the rounded profile values (24/48) would then be up to 0.22 line off.
   // 14400 lines/inch (7200 dpi) is scaled from 7200: not measured fractionally yet.

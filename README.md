@@ -1,25 +1,53 @@
-# OpticFilm scanner helper
+# OpticFilm 7600i roll scanner
 
-A single executable that runs the OpticFilm 7600i scanner page on Linux, Windows and macOS. It serves the page to your browser on `127.0.0.1` and talks to the scanner itself, using the operating system's own USB interface (usbfs on Linux, the installed scanner driver on Windows, IOKit on macOS). Nothing needs to be installed, and any browser works, including Firefox and Safari, since WebUSB is no longer involved.
+An unofficial, open-source scanning application for the **Plustek OpticFilm 7600i** film scanner
+(first version: USB `07b3:0c3b`, bcdDevice 4.00, Genesys GL843). A single executable runs a small
+local web server, talks to the scanner over USB with the operating system's own interface, and
+opens a roll-scanning page in your browser. No driver, SANE or SilverFast installation is needed.
 
-Pick the file for your system:
+It replays the USB command sequences that the official software sends, recorded from a real
+7600i, so scans are made with the same register settings, motor tables and calibration as the
+vendor software, and adds roll-oriented features on top:
 
-| System | File |
-|---|---|
-| Windows (most PCs) | `opticfilm-windows-x64.exe` |
-| Windows on ARM | `opticfilm-windows-arm64.exe` |
-| Mac with Apple silicon (M1 or later) | `opticfilm-macos-apple-silicon` |
-| Intel Mac | `opticfilm-macos-intel` |
-| Linux PC | `opticfilm-linux-x64` |
-| Linux ARM (Raspberry Pi 4/5 64-bit) | `opticfilm-linux-arm64` |
+- **Roll workflow**: load a frame, press Space (or the scanner's front button); each frame is saved
+  as a linear 16-bit TIFF with a JSON record into a dated roll folder, and the roll list is read
+  back from that folder.
+- **1440, 3600 and 7200 dpi**, with sub-pixel colour alignment, Lanczos-3 line reduction and an
+  optional faster mode without CCD dummy lines (3600 dpi in ~40 s).
+- **Multi-exposure** (two passes, as SilverFast does): an extended-range linear merge for negative
+  converters, or an HDR-style exposure fusion of the negatives.
+- **Infrared dust and scratch repair** (iSRD-style): the IR pass is registered to the image,
+  defects are detected against the scan's own IR noise and filled by exemplar inpainting; the IR
+  channel is kept as the TIFF's 4th channel.
+- Live line-by-line preview, front-button support, and a detailed record of every acquisition.
 
-Run it, and your browser opens the roll scanner page. Keep the console window open while you scan. Press Ctrl+C in it (or close it) to quit.
+> **Status and disclaimer.** This is a hobby project, not affiliated with or endorsed by Plustek or
+> LaserSoft Imaging. "OpticFilm", "SilverFast" and "iSRD" are trademarks of their owners. It drives
+> the scanner's motor and lamp directly; it has been used on one scanner, and you use it at your
+> own risk. Only the first 7600i hardware version (bcdDevice 4.00) is supported; later units
+> (bcdDevice 6.05, GL845) are refused.
 
-Scans are saved by the helper directly into the roll folder shown on the page (default `~/Pictures/OpticFilm/<today's date>`, e.g. `2026-10-06`, with files `Roll_01.tif`, `Roll_02.tif` …; **New roll…** starts a new dated folder beside it; change it with **Choose…**, which opens a folder browser and can also open your system's folder dialog, or set the default parent with `-out /path`). Choose a resolution (1440, 3600 or 7200 dpi; 7200 needs about 1.4 GB of free memory in the browser), set a name prefix and starting number, load a frame, and press Space: the frame is scanned, saved as `<prefix><number>.tif` with a `.json` record, and released from memory, and the number advances. A `<prefix>_roll.json` file in the folder lists every frame. Existing files are never overwritten unless you choose Rescan on a frame.
+## Quick start
+
+1. Download the file for your system from the [Releases](../../releases) page:
+
+   | System | File |
+   |---|---|
+   | Windows (most PCs) | `opticfilm-windows-x64.exe` |
+   | Windows on ARM | `opticfilm-windows-arm64.exe` |
+   | Mac with Apple silicon (M1 or later) | `opticfilm-macos-apple-silicon` |
+   | Intel Mac | `opticfilm-macos-intel` |
+   | Linux PC | `opticfilm-linux-x64` |
+   | Linux ARM (Raspberry Pi 4/5 64-bit) | `opticfilm-linux-arm64` |
+
+2. Do the one-time setup for your system (below), close SilverFast or any other scanning software
+   (only one program can hold the scanner), and run the file. Your browser opens the roll page;
+   keep the console window open while you scan, and press Ctrl+C in it (or close it) to quit.
+3. Press **Connect scanner**, load a frame, and press Space.
+
+Scans are saved by the helper directly into the roll folder shown on the page (default `~/Pictures/OpticFilm/<today's date>`, e.g. `2026-10-06`, with files `Roll_01.tif`, `Roll_02.tif` …; **New roll…** starts a new dated folder beside it; change it with **Choose…**, which opens a folder browser and can also open your system's folder dialog, or set the default parent with `-out /path`). Choose a resolution (1440, 3600 or 7200 dpi; 7200 needs about 1.4 GB of free memory in the browser), load a frame, and press Space: the frame is scanned, saved as `<prefix><number>.tif` with a `.json` record, and released from memory, and the number advances. A `<prefix>_roll.json` file in the folder lists every frame. Existing files are never overwritten unless you choose Rescan on a frame.
 
 The previous research page (custom resolution, crop, infrared; not verified against the vendor software) is at `/experimental`.
-
-Close SilverFast and any other scanning software first. Only one program can hold the scanner at a time.
 
 ## One-time setup
 
@@ -72,33 +100,6 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
 Replug the scanner after adding the rule.
-
-## Options
-
-- `-port 47600`: the local port to use. The page stores its calibration in the browser per address, so keeping the default port keeps your calibration between runs.
-- `-no-browser`: don't open a browser automatically. Visit the printed address yourself.
-
-## Capture-matched acquisition (default)
-
-The default v1 mode follows the supplied prescan and full-scan recordings, including motor/AFE settings and the recorded hardware-shading uploads. Prescan samples at 1440 × 2880 dpi; full scan at 3600 × 7200 dpi (the file described as 3200 dpi programs 3600 dpi horizontally). Each uses its own fixed recorded frame. The profiles contain calibration data, not photographs: image pixels are read anew from the scanner.
-
-Keep the same scanner/holder setup as the recordings. Connect, boot, home, then choose Prescan or Scan frame. Calibration in this mode is **the recorded calibration for your unit**, not a newly computed calibration. Custom crop, IR and multiple-exposure controls are disabled because those settings are not represented by these captures. Uncheck “match supplied captures” to use the separate SANE-derived custom mode and fresh host calibration.
-
-Preview and rendered PNG align RGB channels, correct sample aspect ratio, stretch channel levels, invert negatives, and rotate upright by default. Save rendered PNG for the displayed result. Save raw RGB16 TIFF to preserve every received RGB sample, including channel-alignment margin rows, without host processing. Save aligned/processed TIFF for the working image, which may include channel alignment, host calibration or pass merging. Neither TIFF is inverted or rotated. The independent “invert preview / PNG only” checkbox changes only the displayed/rendered image. In custom multi-pass mode raw export retains the first normal-exposure RGB pass. The complete change log, discoveries and export semantics are in [README_CHANGES_AND_FINDINGS.md](README_CHANGES_AND_FINDINGS.md). Capture validation details are in [CAPTURE_VALIDATION.md](CAPTURE_VALIDATION.md).
-
-The Go helper embeds `ui.html`, `capture_profiles.js` and `capture_runtime.js`; all three must be present when building. Opening `ui.html` directly also requires both JavaScript files alongside it.
-
-## Testing status
-
-Capture profiles and reconstruction were verified offline against both original USB captures. Command-stream, short-read, cancellation, and pixel/percentile tests passed. This update has not been rebuilt with Go or exercised on a physical scanner in the validation environment. The native backends still require hardware verification.
-
-## Building from source
-
-Install Go 1.22 or newer and run `./build.sh`. The only third-party module is `github.com/ebitengine/purego`, which lets the macOS build call IOKit without a C compiler. Source-level tests run with `node tests/capture_runtime.test.cjs` and `node tests/raw_tiff.test.cjs`.
-
-## Protocol
-
-`PROTOCOL.md` documents what the USB captures show about the scanner: transfer types, the register map with observed values, slope and shading tables, the analogue front end, geometry and timing formulas, the scan sequence, motor behaviour, and what is still unknown.
 
 ## Main button, horizontal flip and Advanced options
 
@@ -332,3 +333,60 @@ Scanning is not stock-specific: the calibration is read through the holder, not 
 matched across Lucky 200 and Kodak Gold 200 within 2 %. The orange mask is handled per frame by
 the preview levels and by negative converters. Kodak Gold is denser (blue median 4 % of full
 scale against Lucky's 8 %), so it benefits more from multi-exposure.
+
+## Command-line options
+
+- `-port 47600`: the local port. Keep the default: the page keeps its settings and previews in the
+  browser per address.
+- `-no-browser`: don't open a browser; visit the printed address yourself.
+- `-out /path`: the default parent folder for roll folders (default `~/Pictures/OpticFilm`).
+- `-install-udev` (Linux): install the udev rule that gives your user access to the scanner, then exit.
+- `-version`: print the version and exit.
+
+## How it works
+
+The scanner is driven by **replaying recorded command sequences** (`capture_profiles.js`): the
+exact USB traffic of the official software for each resolution, recorded from a 7600i v1,
+including its analogue front-end settings, motor tables and hardware shading uploads. The
+calibration is therefore the recorded one for that unit, checked live: the white and dark
+calibration reads of every scan are compared with the recording, and black level is corrected.
+On top of the recordings the app can drop CCD dummy lines, lengthen the exposure (multi-exposure)
+and run the recorded infrared sequence; every change is documented in
+[docs/PROTOCOL.md](docs/PROTOCOL.md). All image processing (alignment, multi-exposure merge,
+infrared repair, previews) runs in the page; the Go helper only does USB and file access.
+
+The recordings and the tools that turned them into profiles are described in
+[docs/CAPTURE_VALIDATION.md](docs/CAPTURE_VALIDATION.md) and `tools/build_capture_profiles.py`.
+
+## Building and testing
+
+Requires **Go 1.24** or newer and, for the tests, **Node.js 20** or newer.
+
+```sh
+make build        # ./opticfilm for this system
+make dist         # all six release binaries into dist/ (same as ./build.sh)
+make test         # Go tests and the JavaScript test suite
+```
+
+The only third-party Go module is `github.com/ebitengine/purego`, which lets the macOS build
+call IOKit without a C compiler. The helper embeds `ui.html`, `experimental.html` and the
+JavaScript files at build time. Opening `ui.html` straight from disk also works for a dry run
+(simulated scanner) without the helper.
+
+To check without a scanner: run the helper, open **Diagnostics → Dry run** on the page; frames are
+synthesised and written as real files.
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [docs/PROTOCOL.md](docs/PROTOCOL.md) | The scanner's USB protocol as evidenced by the captures: transfers, registers, status bits, tables, geometry and timing, scan sequence, motor, events |
+| [docs/CAPTURE_FINDINGS_COLOUR_ME_IR.md](docs/CAPTURE_FINDINGS_COLOUR_ME_IR.md) | Colour-film, multi-exposure and infrared captures: settings, black level, IR data |
+| [docs/DESIGN_MULTIEXPOSURE_AND_IR.md](docs/DESIGN_MULTIEXPOSURE_AND_IR.md) | Design and validation of multi-exposure and infrared repair |
+| [docs/CAPTURE_VALIDATION.md](docs/CAPTURE_VALIDATION.md) | The recorded acquisition baseline |
+| [docs/CHANGES_AND_FINDINGS.md](docs/CHANGES_AND_FINDINGS.md) | Development log: changes, findings and fixes |
+
+## License
+
+[MIT](LICENSE). The GL843 register semantics come from the Genesys Logic datasheet; a few
+hardware constants on the experimental page are cited from the SANE genesys backend.

@@ -92,7 +92,7 @@ register access, since a read is two transfers (select, then read).
 ---
 
 **Colour-film captures (multi-exposure, iSRD).** Two further 3600 dpi captures confirm the
-sequence above and add three facts; details in `CAPTURE_FINDINGS_COLOUR_ME_IR.md`:
+sequence above and add three facts; details in [CAPTURE_FINDINGS_COLOUR_ME_IR.md](CAPTURE_FINDINGS_COLOUR_ME_IR.md):
 
 - **Longer exposure** is LPERIOD alone: the vendor's multi-exposure main scan uses LPERIOD 42,000
   (3×, 16.8 ms), LINESEL 0, scan-table cruise 21,000 (still 2 steps per line) and BUFSEL
@@ -462,7 +462,7 @@ the same at every resolution.
   payload is absent, while its control stream is complete. PCAP captured/original
   lengths account for all 402,392,140 missing bytes. This does not establish USB loss. Restore the missing bytes within the original image
   read, before completion polling or scan/lamp shutdown; appending them after teardown
-  causes the halfway failure documented in README_CHANGES_AND_FINDINGS.md.
+  causes the halfway failure documented in [CHANGES_AND_FINDINGS.md](CHANGES_AND_FINDINGS.md).
 
 ## 10. What is still unknown
 

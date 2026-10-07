@@ -1,7 +1,7 @@
 /* Multi-exposure merging, exposure fusion and infrared defect repair. No DOM dependencies.
    Works on aligned, square-pixel frames: interleaved little-endian RGB16 (Uint16Array, W×H×3), the
    same layout the TIFF writer uses, plus single-channel planes. Design and the measurements behind
-   it: DESIGN_MULTIEXPOSURE_AND_IR.md and CAPTURE_FINDINGS_COLOUR_ME_IR.md. */
+   it: docs/DESIGN_MULTIEXPOSURE_AND_IR.md and docs/CAPTURE_FINDINGS_COLOUR_ME_IR.md. */
 (() => {
   const assert=(ok,msg)=>{ if(!ok) throw new Error(msg); };
   // The slow steps are generators that yield their progress (0..1) between stages. runSync drives

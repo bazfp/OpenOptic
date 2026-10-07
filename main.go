@@ -395,12 +395,20 @@ func openBrowser(url string) error {
 	}
 }
 
+// version is set at build time: -ldflags "-X main.version=v1.2.3" (see Makefile and build.sh).
+var version = "dev"
+
 func main() {
 	port := flag.Int("port", 47600, "port on 127.0.0.1 (a fixed port keeps saved calibration between runs)")
 	noBrowser := flag.Bool("no-browser", false, "don't open a browser window")
 	installUdev := flag.Bool("install-udev", false, "Linux: install the udev rule that lets you open the scanner without sudo, then exit")
 	outDir := flag.String("out", defaultOutputDir(), "default folder for roll scans (can be changed on the page)")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("opticfilm", version)
+		return
+	}
 	log.SetFlags(log.Ltime)
 
 	tok := make([]byte, 16)
