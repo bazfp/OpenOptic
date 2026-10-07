@@ -10,6 +10,8 @@ of your negatives, ready to invert in the tool you already like.
 [![CI](https://github.com/bazfp/OpenOptic/actions/workflows/ci.yml/badge.svg)](https://github.com/bazfp/OpenOptic/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+![OpenOptic with a scanned roll: frame preview, filmstrip and scan settings](docs/images/screenshot-main.jpg)
+
 ## Features
 
 - **Free and open source**: MIT-licensed, no subscriptions, no watermarks, no locked features.
@@ -69,9 +71,8 @@ a time.
   ./openoptic-macos-apple-silicon
   ```
 
-- **Linux**: give your user access to the scanner once with
-  `sudo ./openoptic-linux-x64 -install-udev`, re-plug the scanner, then run
-  `./openoptic-linux-x64`.
+- **Linux**: `chmod +x openoptic-linux-x64` and run `./openoptic-linux-x64`. If your user
+  can't open the scanner, it prints the one command that fixes it.
 
 Your browser opens the OpenOptic page. Keep the small console window open while you scan; close
 it (or press Ctrl+C) to quit.
@@ -99,6 +100,17 @@ any fixed inversion:
 
 Import the TIFFs as you would any scan. Tip: leave a sliver of unexposed film base at the edge of
 the frame; converters use it to neutralise the orange mask.
+
+## Screenshots
+
+Every saved frame gets a full-size preview, with its record a click away:
+
+![A frame selected in the roll with its file details expanded](docs/images/screenshot-frame-info.jpg)
+
+Portrait frames are rotated for you, and the advanced options (sensor sampling, line doubling,
+front-button actions) sit tucked away until you want them:
+
+![A portrait frame with the advanced options open](docs/images/screenshot-advanced.jpg)
 
 The [user guide](docs/USER_GUIDE.md) covers every option in detail.
 
@@ -193,6 +205,13 @@ the page.
 | [docs/CAPTURE_FINDINGS_COLOUR_ME_IR.md](docs/CAPTURE_FINDINGS_COLOUR_ME_IR.md) | Colour-film, multi-exposure and infrared measurements |
 | [docs/CAPTURE_VALIDATION.md](docs/CAPTURE_VALIDATION.md) | Acquisition baseline and validation |
 | [docs/CHANGES_AND_FINDINGS.md](docs/CHANGES_AND_FINDINGS.md) | Development log |
+
+## Credits
+
+The photos in the screenshots are from scikit-image's sample data, scanned as demonstration
+negatives: coffee by Rachel Michetti (CC0), Chelsea the cat by Stefan van der Walt (CC0), the
+cameraman by Lav Varshney (CC0), astronaut Eileen Collins (NASA, public domain), the Falcon 9 DSCOVR
+launch (SpaceX, public domain) and the Hubble eXtreme Deep Field (NASA, public domain).
 
 ## License
 

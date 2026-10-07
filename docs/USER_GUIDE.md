@@ -61,30 +61,12 @@ xattr -d com.apple.quarantine openoptic-macos-apple-silicon
 
 (Use `openoptic-macos-intel` on an Intel Mac.)
 
-### Linux: allow your user to access the scanner
+### Linux
 
-```
-sudo ./openoptic-linux-x64 -install-udev
-```
-
-That writes the rule, reloads udev and tells you to re-plug the scanner; afterwards run the helper
-normally. Two alternatives, if you prefer:
-
-- **Just use sudo:** `sudo ./openoptic-linux-x64`. Nothing is installed, and scans you save still
-  belong to you, not to root.
-- **Install sane-backends** (`sudo apt install sane-utils`, `sudo dnf install sane-backends`) and
-  re-plug the scanner: its scanner rules usually cover this device already.
-
-If you would rather write the rule by hand, it is:
-
-```
-sudo tee /etc/udev/rules.d/70-openoptic.rules <<'EOF'
-SUBSYSTEM=="usb", ATTR{idVendor}=="07b3", ATTR{idProduct}=="0c3b", MODE="0660", TAG+="uaccess"
-EOF
-sudo udevadm control --reload-rules && sudo udevadm trigger
-```
-
-Replug the scanner after adding the rule.
+Run the file (`chmod +x openoptic-linux-x64`, then `./openoptic-linux-x64`). If your user isn't
+allowed to open the scanner, the helper says so and prints the fix: run it once with
+`sudo ./openoptic-linux-x64 -install-udev` and re-plug the scanner. Many systems with
+sane-backends installed already allow access.
 
 ## Main button, horizontal flip and Advanced options
 
