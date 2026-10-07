@@ -3,7 +3,7 @@
 **OpenOptic is a free, high-fidelity raw negative film scanning suite for your Plustek OpticFilm
 7600i, entirely within your browser.**
 
-Download one small file, run it, and your browser becomes a roll-scanning workstation. There's no
+Run the standalone app and your browser becomes a roll-scanning workstation. There's no
 driver to install, no licence to buy and nothing to configure. You get clean, linear 16-bit scans
 of your negatives, ready to invert in the tool you already like.
 
@@ -14,14 +14,13 @@ of your negatives, ready to invert in the tool you already like.
 
 ## Features
 
-- **Free and open source**: MIT-licensed, no subscriptions, no watermarks, no locked features.
+- **Raw linear TIFF negative export**: 16-bit-per-channel linear scans with no inversion,
+  curves or colour "correction" baked in. Exactly what negative converters want.
 - **Integrated dust and scratch removal**: an infrared pass finds dust, hairs and scratches and
   repairs them with texture-aware inpainting that keeps the film grain. The infrared channel is
   also saved inside the TIFF, and a toggle shows exactly what was repaired.
 - **Multi-platform**: Windows, macOS (Apple silicon and Intel) and Linux (x64 and ARM, including
   Raspberry Pi 4/5). One self-contained file per system; no driver changes on Windows or macOS.
-- **Raw linear TIFF negative export**: 16-bit-per-channel linear scans with no inversion,
-  curves or colour "correction" baked in. Exactly what negative converters want.
 - **Maximum sensor scan size**: the full native resolution of the sensor, 7200 dpi (about
   10,248 × 7,009 pixels, 72 megapixels per 35 mm frame), plus 3600 and 1440 dpi.
 - **Fast scans**: a 3600 dpi frame in about 40 seconds, roughly twice as fast as SilverFast's
@@ -38,6 +37,7 @@ of your negatives, ready to invert in the tool you already like.
   saved and numbered for you.
 - **Sub-pixel colour alignment** and high-quality Lanczos resampling for sharp, fringe-free
   images, and correction for the sensor's staggered columns at 7200 dpi.
+- **Free and open source**: MIT-licensed, no subscriptions, no watermarks, no locked features.
 
 ## Getting started
 
