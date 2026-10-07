@@ -71,7 +71,7 @@ remain comparisons against recorded deletion-mode calibration, not recalibration
 Longer-exposure selections are persisted but explicitly blocked before USB access,
 including the error handler's usual stop command. Fresh calibration and coordinated
 motor timing are deferred. No long-exposure acquisition is implemented or claimed.
-See README.md for usage and limitations. The options are locked during a scan and
+See USER_GUIDE.md for usage and limitations. The options are locked during a scan and
 the scan uses a settings snapshot. Existing 7200 dpi sequencing fixes are retained.
 
 Validation: configuration tests for all three profiles, headless page acquisition
