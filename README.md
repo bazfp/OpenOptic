@@ -13,32 +13,29 @@ of your negatives, ready to invert in the tool you already like.
 ## Features
 
 - **Free and open source**: MIT-licensed, no subscriptions, no watermarks, no locked features.
+- **Integrated dust and scratch removal**: an infrared pass finds dust, hairs and scratches and
+  repairs them with texture-aware inpainting that keeps the film grain. The infrared channel is
+  also saved inside the TIFF, and a toggle shows exactly what was repaired.
 - **Multi-platform**: Windows, macOS (Apple silicon and Intel) and Linux (x64 and ARM, including
   Raspberry Pi 4/5). One self-contained file per system; no driver changes on Windows or macOS.
 - **Raw linear TIFF negative export**: 16-bit-per-channel linear scans with no inversion,
   curves or colour "correction" baked in. Exactly what negative converters want.
 - **Maximum sensor scan size**: the full native resolution of the sensor, 7200 dpi (about
   10,248 × 7,009 pixels, 72 megapixels per 35 mm frame), plus 3600 and 1440 dpi.
-- **Fast scans**: a 3600 dpi frame in about 40 seconds, roughly twice as fast as the vendor
-  software's default timing.
+- **Fast scans**: a 3600 dpi frame in about 40 seconds, roughly twice as fast as SilverFast's
+  default timing.
 - **Live previews**: watch the frame appear line by line as it scans, with a quick framing check
   before you commit, and a high-quality preview of every saved frame.
-- **Integrated dust and scratch removal**: an infrared pass finds dust, hairs and scratches and
-  repairs them with texture-aware inpainting that keeps the film grain. The infrared channel is
-  also saved inside the TIFF, and a toggle shows exactly what was repaired.
 - **Multiple exposure support**: a second, longer exposure pulls clean detail out of dense
   negatives. Choose an extended-range linear merge (for negative converters) or an HDR-style
   exposure fusion.
 - **Photo roll management**: dated roll folders, automatic frame numbering, a filmstrip of the
-  whole roll, a JSON record of every scan, safe delete (frames move to a `Deleted` folder,
-  nothing is erased), and rescans that never silently overwrite.
+  whole roll, a JSON record of every scan, and rescans that never silently overwrite.
 - **Scanner button support**: scan a whole roll without touching the computer! Slide the
   holder to the next frame and press the scanner's front button: the frame is scanned,
   saved and numbered for you.
 - **Sub-pixel colour alignment** and high-quality Lanczos resampling for sharp, fringe-free
   images, and correction for the sensor's staggered columns at 7200 dpi.
-- **Transparent and private**: everything runs on your own computer, and every scan comes with a
-  full record of the settings used.
 
 ## Getting started
 
@@ -84,10 +81,10 @@ it (or press Ctrl+C) to quit.
 1. Press **Connect scanner**.
 2. In the **Roll** section, check the folder (by default `~/Pictures/OpenOptic/<today's date>`)
    and choose a resolution. 3600 dpi is a great everyday choice.
-3. Optionally turn on **Infrared** (dust and scratch repair) and **Multi-exposure**.
-4. Load the film holder, press **Check framing** to see the frame, then press **Space** (or the
-   scanner's front button) to scan and save.
-5. Slide to the next frame and press again. Each frame is saved as `Roll_01.tif`,
+3. Load the film holder, press **Check framing** to see the frame, then press **Space** to scan
+   and save. You don't need the keyboard: the scanner's **top button** does the same as Space,
+   and the **bottom button** runs Check framing.
+4. Slide to the next frame and press again. Each frame is saved as `Roll_01.tif`,
    `Roll_02.tif` and so on, with a matching `.json` record, and appears in the filmstrip.
 
 ### 4. Invert your negatives
