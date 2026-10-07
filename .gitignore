@@ -1,8 +1,8 @@
 # build output
 /dist/
-/opticfilm
-/opticfilm.exe
-/opticfilm-*
+/openoptic
+/openoptic.exe
+/openoptic-*
 
 # Python / Node caches
 __pycache__/

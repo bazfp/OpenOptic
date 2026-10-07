@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OpticFilm 7600i — experimental (unverified)</title>
+<title>OpenOptic — experimental (unverified)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -335,7 +335,7 @@ async function uploadSlopeTable(n,table){
 }
 
 // ---------------------------------------------------------------- native USB bridge
-// When this page is served by the opticfilm helper program, window.NATIVE_USB is set and USB
+// When this page is served by the OpenOptic helper program, window.NATIVE_USB is set and USB
 // traffic goes to the helper over HTTP on 127.0.0.1 instead of through WebUSB. The object returned
 // by nativeOpen() mimics the subset of the WebUSB USBDevice API that this page uses.
 async function nativeCall(path,body){
@@ -941,7 +941,7 @@ async function capturedScan(key){
 function savePng(){
   if(!result)return;
   const c=document.createElement('canvas');drawPlanes(c,result.planes,result.g,{invert:$('previewInvert').checked,maxW:100000});
-  c.toBlob(b=>{if(b)download(`opticfilm-${result.meta.kind}-${result.g.dpi}dpi.png`,b);},'image/png');
+  c.toBlob(b=>{if(b)download(`openoptic-${result.meta.kind}-${result.g.dpi}dpi.png`,b);},'image/png');
 }
 
 // ---------------------------------------------------------------- wiring
@@ -964,7 +964,7 @@ $('vendorProfile').onchange=syncProfileUI;
 const refreshPreview=()=>{if(result)drawPlanes($('view'),result.planes,result.g,{invert:$('previewInvert').checked});};
 $('upright').onchange=$('previewInvert').onchange=refreshPreview;
 $('film').onchange=()=>{$('previewInvert').checked=$('film').value==='neg';refreshPreview();};
-$('bTrace').onclick=()=>download('opticfilm-trace-'+Date.now()+'.json',new Blob([JSON.stringify({device:'07b3:0c3b',bcdDevice:dev?`${dev.deviceVersionMajor}.${dev.deviceVersionMinor}${dev.deviceVersionSubminor}`:null,fake,variant:variant.name,trace},null,1)],{type:'application/json'}));
+$('bTrace').onclick=()=>download('openoptic-trace-'+Date.now()+'.json',new Blob([JSON.stringify({device:'07b3:0c3b',bcdDevice:dev?`${dev.deviceVersionMajor}.${dev.deviceVersionMinor}${dev.deviceVersionSubminor}`:null,fake,variant:variant.name,trace},null,1)],{type:'application/json'}));
 $('bForget').onclick=()=>{ calib=null; try{localStorage.removeItem('calib');}catch(e){} log('','calibration forgotten'); };
 syncProfileUI();
 if(calib) log('',`calibration from ${calib.when} loaded for ${calib.dpi} dpi`);

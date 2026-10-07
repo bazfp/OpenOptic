@@ -8,6 +8,6 @@ for t in linux/amd64:linux-x64 linux/arm64:linux-arm64 \
          darwin/amd64:macos-intel darwin/arm64:macos-apple-silicon; do
   target=${t%%:*}; name=${t#*:}
   GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 \
-    go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o "dist/opticfilm-$name" .
-  echo "built dist/opticfilm-$name ($VERSION)"
+    go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o "dist/openoptic-$name" .
+  echo "built dist/openoptic-$name ($VERSION)"
 done

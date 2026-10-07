@@ -13,7 +13,10 @@ import (
 	"strings"
 )
 
-const udevRulePath = "/etc/udev/rules.d/70-opticfilm.rules"
+const udevRulePath = "/etc/udev/rules.d/70-openoptic.rules"
+
+// the rule file written by versions before the rename still grants access
+const legacyUdevRulePath = "/etc/udev/rules.d/70-opticfilm.rules"
 const udevRule = `# Plustek OpticFilm 7600i: let the logged-in desktop user open the scanner.
 SUBSYSTEM=="usb", ATTR{idVendor}=="07b3", ATTR{idProduct}=="0c3b", MODE="0660", TAG+="uaccess"
 `
@@ -48,7 +51,7 @@ func installUdevRule() string {
 	if os.Getuid() != 0 {
 		exe, err := os.Executable()
 		if err != nil {
-			exe = "./opticfilm-linux-x64"
+			exe = "./openoptic-linux-x64"
 		}
 		return "Installing the rule needs root. Run:\n\n    sudo " + exe + " -install-udev\n\n" +
 			"Or start the helper itself with sudo, which needs no rule at all:\n\n    sudo " + exe + "\n"
@@ -78,7 +81,7 @@ func accessHint() string {
 	}
 	exe, err := os.Executable()
 	if err != nil {
-		exe = "./opticfilm-linux-x64"
+		exe = "./openoptic-linux-x64"
 	}
 	hint := "\nOn Linux the scanner's USB device node is root-owned by default. Any one of these works:\n" +
 		"  1. Start the helper with sudo (nothing to install; saved files still belong to you):\n" +
@@ -87,8 +90,11 @@ func accessHint() string {
 		"         sudo " + exe + " -install-udev\n" +
 		"  3. Install sane-backends (its scanner rules usually cover this scanner) and re-plug it:\n" +
 		"         Debian/Ubuntu: sudo apt install sane-utils    Fedora: sudo dnf install sane-backends\n"
-	if _, err := os.Stat(udevRulePath); err == nil {
-		hint += "\n" + udevRulePath + " exists already: unplug the scanner and plug it in again so it takes effect.\n"
+	for _, p := range []string{udevRulePath, legacyUdevRulePath} {
+		if _, err := os.Stat(p); err == nil {
+			hint += "\n" + p + " exists already: unplug the scanner and plug it in again so it takes effect.\n"
+			break
+		}
 	}
 	if p, err := filepath.Glob("/usr/lib/udev/rules.d/*libsane*"); err == nil && len(p) > 0 {
 		hint += "\nsane's udev rules are installed (" + p[0] + "); re-plugging the scanner may be enough.\n"

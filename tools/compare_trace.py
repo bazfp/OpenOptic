@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare an application USB trace (Save USB trace JSON) with a vendor USBPcap capture.
 
-    python3 tools/compare_trace.py prescan.pcapng opticfilm-trace-XXXX.json
+    python3 tools/compare_trace.py prescan.pcapng openoptic-trace-XXXX.json
 
 The application is expected to reproduce the vendor's control/bulk-OUT stream exactly. The
 only permitted differences are:

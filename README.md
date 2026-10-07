@@ -1,7 +1,7 @@
-# OpticFilm 7600i roll scanner
+# OpenOptic
 
-An unofficial, open-source scanning application for the **Plustek OpticFilm 7600i** film scanner
-(first version: USB `07b3:0c3b`, bcdDevice 4.00, Genesys GL843). A single executable runs a small
+**An open roll scanner for the Plustek OpticFilm 7600i.** OpenOptic is an unofficial, open-source
+scanning application for this film scanner (first version: USB `07b3:0c3b`, bcdDevice 4.00, Genesys GL843). A single executable runs a small
 local web server, talks to the scanner over USB with the operating system's own interface, and
 opens a roll-scanning page in your browser. No driver, SANE or SilverFast installation is needed.
 
@@ -33,19 +33,19 @@ vendor software, and adds roll-oriented features on top:
 
    | System | File |
    |---|---|
-   | Windows (most PCs) | `opticfilm-windows-x64.exe` |
-   | Windows on ARM | `opticfilm-windows-arm64.exe` |
-   | Mac with Apple silicon (M1 or later) | `opticfilm-macos-apple-silicon` |
-   | Intel Mac | `opticfilm-macos-intel` |
-   | Linux PC | `opticfilm-linux-x64` |
-   | Linux ARM (Raspberry Pi 4/5 64-bit) | `opticfilm-linux-arm64` |
+   | Windows (most PCs) | `openoptic-windows-x64.exe` |
+   | Windows on ARM | `openoptic-windows-arm64.exe` |
+   | Mac with Apple silicon (M1 or later) | `openoptic-macos-apple-silicon` |
+   | Intel Mac | `openoptic-macos-intel` |
+   | Linux PC | `openoptic-linux-x64` |
+   | Linux ARM (Raspberry Pi 4/5 64-bit) | `openoptic-linux-arm64` |
 
 2. Do the one-time setup for your system (below), close SilverFast or any other scanning software
    (only one program can hold the scanner), and run the file. Your browser opens the roll page;
    keep the console window open while you scan, and press Ctrl+C in it (or close it) to quit.
 3. Press **Connect scanner**, load a frame, and press Space.
 
-Scans are saved by the helper directly into the roll folder shown on the page (default `~/Pictures/OpticFilm/<today's date>`, e.g. `2026-10-06`, with files `Roll_01.tif`, `Roll_02.tif` …; **New roll…** starts a new dated folder beside it; change it with **Choose…**, which opens a folder browser and can also open your system's folder dialog, or set the default parent with `-out /path`). Choose a resolution (1440, 3600 or 7200 dpi; 7200 needs about 1.4 GB of free memory in the browser), load a frame, and press Space: the frame is scanned, saved as `<prefix><number>.tif` with a `.json` record, and released from memory, and the number advances. A `<prefix>_roll.json` file in the folder lists every frame. Existing files are never overwritten unless you choose Rescan on a frame.
+Scans are saved by the helper directly into the roll folder shown on the page (default `~/Pictures/OpenOptic/<today's date>`, e.g. `2026-10-06`, with files `Roll_01.tif`, `Roll_02.tif` …; **New roll…** starts a new dated folder beside it; change it with **Choose…**, which opens a folder browser and can also open your system's folder dialog, or set the default parent with `-out /path`). Choose a resolution (1440, 3600 or 7200 dpi; 7200 needs about 1.4 GB of free memory in the browser), load a frame, and press Space: the frame is scanned, saved as `<prefix><number>.tif` with a `.json` record, and released from memory, and the number advances. A `<prefix>_roll.json` file in the folder lists every frame. Existing files are never overwritten unless you choose Rescan on a frame.
 
 The previous research page (custom resolution, crop, infrared; not verified against the vendor software) is at `/experimental`.
 
@@ -69,23 +69,23 @@ No driver change is needed. The file is unsigned, so macOS quarantines it after 
 
 ```sh
 cd ~/Downloads
-chmod +x opticfilm-macos-apple-silicon
-xattr -d com.apple.quarantine opticfilm-macos-apple-silicon
-./opticfilm-macos-apple-silicon
+chmod +x openoptic-macos-apple-silicon
+xattr -d com.apple.quarantine openoptic-macos-apple-silicon
+./openoptic-macos-apple-silicon
 ```
 
-(Use `opticfilm-macos-intel` on an Intel Mac.)
+(Use `openoptic-macos-intel` on an Intel Mac.)
 
 ### Linux: allow your user to access the scanner
 
 ```
-sudo ./opticfilm-linux-x64 -install-udev
+sudo ./openoptic-linux-x64 -install-udev
 ```
 
 That writes the rule, reloads udev and tells you to re-plug the scanner; afterwards run the helper
 normally. Two alternatives, if you prefer:
 
-- **Just use sudo:** `sudo ./opticfilm-linux-x64`. Nothing is installed, and scans you save still
+- **Just use sudo:** `sudo ./openoptic-linux-x64`. Nothing is installed, and scans you save still
   belong to you, not to root.
 - **Install sane-backends** (`sudo apt install sane-utils`, `sudo dnf install sane-backends`) and
   re-plug the scanner: its scanner rules usually cover this device already.
@@ -93,7 +93,7 @@ normally. Two alternatives, if you prefer:
 If you would rather write the rule by hand, it is:
 
 ```
-sudo tee /etc/udev/rules.d/70-opticfilm.rules <<'EOF'
+sudo tee /etc/udev/rules.d/70-openoptic.rules <<'EOF'
 SUBSYSTEM=="usb", ATTR{idVendor}=="07b3", ATTR{idProduct}=="0c3b", MODE="0660", TAG+="uaccess"
 EOF
 sudo udevadm control --reload-rules && sudo udevadm trigger
@@ -339,7 +339,7 @@ scale against Lucky's 8 %), so it benefits more from multi-exposure.
 - `-port 47600`: the local port. Keep the default: the page keeps its settings and previews in the
   browser per address.
 - `-no-browser`: don't open a browser; visit the printed address yourself.
-- `-out /path`: the default parent folder for roll folders (default `~/Pictures/OpticFilm`).
+- `-out /path`: the default parent folder for roll folders (default `~/Pictures/OpenOptic`).
 - `-install-udev` (Linux): install the udev rule that gives your user access to the scanner, then exit.
 - `-version`: print the version and exit.
 
@@ -363,7 +363,7 @@ The recordings and the tools that turned them into profiles are described in
 Requires **Go 1.24** or newer and, for the tests, **Node.js 20** or newer.
 
 ```sh
-make build        # ./opticfilm for this system
+make build        # ./openoptic for this system
 make dist         # all six release binaries into dist/ (same as ./build.sh)
 make test         # Go tests and the JavaScript test suite
 ```

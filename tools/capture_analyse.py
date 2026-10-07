@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Analyse a Windows USBPcap capture (.pcapng) of a Genesys GL843/GL845 scanner.
 
-Reproduces the analysis behind opticfilm-protocol-reference.md: decodes the GL84x
+Reproduces the analysis behind docs/PROTOCOL.md: decodes the GL84x
 register protocol, prints each bulk operation with the register state in force,
 and optionally extracts the main image and measures colour line shifts.
 
-    python3 opticfilm-capture-analyse.py capture.pcapng              # summary + bulk ops
-    python3 opticfilm-capture-analyse.py capture.pcapng --timeline   # full register stream
-    python3 opticfilm-capture-analyse.py capture.pcapng --image      # extract largest read, measure shifts
+    python3 tools/capture_analyse.py capture.pcapng              # summary + bulk ops
+    python3 tools/capture_analyse.py capture.pcapng --timeline   # full register stream
+    python3 tools/capture_analyse.py capture.pcapng --image      # extract largest read, measure shifts
 
 Needs only the standard library; --image additionally needs numpy (and Pillow for a preview PNG).
 

@@ -1,4 +1,4 @@
-module opticfilm
+module openoptic
 
 go 1.24.4
 
