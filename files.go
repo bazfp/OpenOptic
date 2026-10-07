@@ -25,9 +25,9 @@ const maxSaveBytes = 2 << 30 // 2 GiB, well above a full raw frame (217 MB)
 
 func defaultOutputDir() string {
 	if h, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(h, "Pictures", "OpticFilm")
+		return filepath.Join(h, "Pictures", "OpenOptic")
 	}
-	return "OpticFilm"
+	return "OpenOptic"
 }
 
 func checkDir(dir string) (string, error) {

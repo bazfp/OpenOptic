@@ -1,6 +1,6 @@
 // Optional browser-level test: drives ui.html in jsdom against a running helper (dry-run scanner, real files).
 //   npm install jsdom@24   (in any folder; set JSDOM_PATH to its node_modules/jsdom)
-//   ./opticfilm-linux-x64 -no-browser -port 47996 -out /tmp/e2e &   then
+//   ./openoptic-linux-x64 -no-browser -port 47996 -out /tmp/e2e &   then
 //   node tests/ui_e2e.cjs http://127.0.0.1:47996/ /tmp/e2e
 // Drive the real page (served by the real helper) in jsdom: dry-run scanner, real files on disk.
 const {JSDOM,VirtualConsole}=require(process.env.JSDOM_PATH||'jsdom');

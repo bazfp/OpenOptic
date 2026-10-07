@@ -1,4 +1,4 @@
-// opticfilm: a single-file helper that serves the OpticFilm scanner page on 127.0.0.1 and
+// OpenOptic: a single-file helper that serves the OpticFilm 7600i roll-scanner page on 127.0.0.1 and
 // performs its USB traffic natively (usbfs on Linux, WinUSB on Windows, IOKit on macOS),
 // so any browser works and no WebUSB support is needed.
 package main
@@ -406,7 +406,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 	if *showVersion {
-		fmt.Println("opticfilm", version)
+		fmt.Println("openoptic", version)
 		return
 	}
 	log.SetFlags(log.Ltime)
@@ -429,7 +429,7 @@ func main() {
 	s.port = ln.Addr().(*net.TCPAddr).Port
 	url := fmt.Sprintf("http://127.0.0.1:%d/", s.port)
 
-	fmt.Printf("OpticFilm scanner helper (%s backend)\n", backendName)
+	fmt.Printf("OpenOptic, roll scanner for the Plustek OpticFilm 7600i (%s backend)\n", backendName)
 	fmt.Printf("Open %s in any browser. Leave this window open while scanning; press Ctrl+C to quit.\n", url)
 	if !*noBrowser {
 		if err := openBrowser(url); err != nil {

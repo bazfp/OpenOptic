@@ -184,14 +184,14 @@ X MB/s" on a successful 3600 dpi scan is a good predictor: it needs to reach 3.6
 The scanner's USB node is root-owned by default, so the helper could not open it without a udev
 rule. Three ways now, none of which needs hand-editing files:
 
-- `sudo ./opticfilm-linux-x64 -install-udev` writes `/etc/udev/rules.d/70-opticfilm.rules`, reloads
+- `sudo ./openoptic-linux-x64 -install-udev` writes `/etc/udev/rules.d/70-openoptic.rules`, reloads
   udev and tells you to re-plug. Run without root, it prints the exact command instead.
-- `sudo ./opticfilm-linux-x64` just works, with nothing installed. Files and folders the helper
+- `sudo ./openoptic-linux-x64` just works, with nothing installed. Files and folders the helper
   creates while running under sudo are handed back to the invoking user (`SUDO_UID`/`SUDO_GID`), so
   scans are not left owned by root.
 - Installing sane-backends is often enough on its own: its scanner rules usually cover this device.
 
-A permission failure now prints all three options, and says when `70-opticfilm.rules` or sane's
+A permission failure now prints all three options, and says when `70-openoptic.rules` or sane's
 rules are already present (in which case re-plugging is what is missing).
 
 `files_test.go` covers the ownership helper being inert when not running as root; the installer was
@@ -455,7 +455,7 @@ Everything removed is still available on `/experimental`.
 ### Helper changes
 
 - `files.go`: `POST /api/files/check` and `POST /api/files/save`. The folder must be an absolute path and is created if missing. Names are restricted to letters, digits, space and `. _ - + ( )` with a `.tif`, `.tiff`, `.json` or `.jpg` extension. Files are never overwritten unless `overwrite=1`. Writes are atomic (temporary file, sync, rename) with SHA-256. Files up to 2 GiB are accepted.
-- `-out` flag sets the default roll parent folder (default `~/Pictures/OpticFilm`). It is passed to the page along with the session token.
+- `-out` flag sets the default roll parent folder (default `~/Pictures/OpenOptic`). It is passed to the page along with the session token.
 - Also serves `roll.js`, `capture_sim.js` and `/experimental`.
 - `files_test.go` covers no-clobber, overwrite, atomicity, SHA-256, folder creation, and rejection of `../`, slashes, hidden names, other extensions and relative folders.
 
@@ -517,7 +517,7 @@ The old full profile was a smaller crop, 2 mm further along the film and 4 mm na
 
 The simulated-scanner test runs the new full profile with slow moves and confirms both moves (19,490 and 13,228 steps) are fully awaited. The original runtime fails the same test. A simulated full-scan trace compared against `3600ppifullframehdr.pcapng` with `tools/compare_trace.py` matches 1,812/1,812 capture ops and 22/22 identical bulk headers. The only additions are addressed status polls.
 
-**Checking a real scan.** After a full scan on the scanner, save the USB trace and run `python3 tools/compare_trace.py 3600ppifullframehdr.pcapng opticfilm-trace-XXXX.json`.
+**Checking a real scan.** After a full scan on the scanner, save the USB trace and run `python3 tools/compare_trace.py 3600ppifullframehdr.pcapng openoptic-trace-XXXX.json`.
 
 Other changes in this update:
 
@@ -555,7 +555,7 @@ Because the carriage was not settled at scan speed when acquisition began, the f
 - `tools/reconstruct_capture.py` uses the same measurement and interpolation. Its planes agree with the JavaScript decode to within 1 LSB of 16 bits.
 
 ### New verification tools
-- `tools/compare_trace.py prescan.pcapng opticfilm-trace-….json` checks an app trace against a vendor capture. OUT payloads and bulk-OUT lengths must match in order. Allowed extras are a preflight prefix, repeated write-ack and bulk-complete polls, addressed status-poll triples, and the post-scan home wait. Any **un-addressed repeated 0x84 read is an error**. The supplied trace: 1811/1811 capture ops matched, 22/22 identical bulk headers, **43 errors** (the bad polls). A trace from the fixed runtime passes.
+- `tools/compare_trace.py prescan.pcapng openoptic-trace-….json` checks an app trace against a vendor capture. OUT payloads and bulk-OUT lengths must match in order. Allowed extras are a preflight prefix, repeated write-ack and bulk-complete polls, addressed status-poll triples, and the post-scan home wait. Any **un-addressed repeated 0x84 read is an error**. The supplied trace: 1811/1811 capture ops matched, 22/22 identical bulk headers, **43 errors** (the bad polls). A trace from the fixed runtime passes.
 - `tests/simulated_scanner.test.cjs [trace.json]` simulates a GL843 with auto-incrementing addressing, the 0x4C–0x4F values the real unit returned, and moves slower than recorded. It fails on any motor start during a move. The original runtime fails it three times, including at main-scan start; the fixed runtime passes for both profiles. Given a path, it writes a UI-format prescan trace for `compare_trace.py`.
 
 ### Validation of this update
@@ -722,7 +722,7 @@ node tests/raw_tiff.test.cjs
 node tests/simulated_scanner.test.cjs sim-prescan.json sim-full.json
 python3 tools/compare_trace.py /path/to/prescan.pcapng sim-prescan.json
 python3 tools/compare_trace.py /path/to/3600ppifullframehdr.pcapng sim-full.json
-python3 tools/compare_trace.py /path/to/prescan.pcapng opticfilm-trace-XXXX.json   # your own scanner trace
+python3 tools/compare_trace.py /path/to/prescan.pcapng openoptic-trace-XXXX.json   # your own scanner trace
 python3 tests/verify_captures.py /path/to/prescan.pcapng /path/to/3600ppifullframehdr.pcapng
 python3 tools/reconstruct_capture.py /path/to/prescan.pcapng prescan.png
 python3 tools/reconstruct_capture.py /path/to/3600ppifullframehdr.pcapng full.png
