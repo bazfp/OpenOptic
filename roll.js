@@ -215,7 +215,7 @@
 
   function manifest(settings,records){
     return {format:VERSION,roll:cleanPrefix(settings.prefix),updated:new Date().toISOString(),
-      settings:{digits:settings.digits,tiff:settings.tiff,mirror:settings.mirror!==false,pixels:settings.pixels,film:settings.film,orientation:settings.orientation,profile:settings.profile,pixelSampling:settings.pixelSampling||'deletion',exposureMultiplier:Number(settings.exposureMultiplier??1),dummyLines:settings.dummyLines||'recorded'},
+      settings:{digits:settings.digits,tiff:settings.tiff,mirror:settings.mirror!==false,pixels:settings.pixels,film:settings.film,orientation:settings.orientation,profile:settings.profile,pixelSampling:settings.pixelSampling||'deletion',dummyLines:settings.dummyLines||'recorded'},
       frames:records.map(({thumb,large,repairMask,...r})=>r)};
   }
 

@@ -47,8 +47,6 @@ vendor software, and adds roll-oriented features on top:
 
 Scans are saved by the helper directly into the roll folder shown on the page (default `~/Pictures/OpenOptic/<today's date>`, e.g. `2026-10-06`, with files `Roll_01.tif`, `Roll_02.tif` …; **New roll…** starts a new dated folder beside it; change it with **Choose…**, which opens a folder browser and can also open your system's folder dialog, or set the default parent with `-out /path`). Choose a resolution (1440, 3600 or 7200 dpi; 7200 needs about 1.4 GB of free memory in the browser), load a frame, and press Space: the frame is scanned, saved as `<prefix><number>.tif` with a `.json` record, and released from memory, and the number advances. A `<prefix>_roll.json` file in the folder lists every frame. Existing files are never overwritten unless you choose Rescan on a frame.
 
-The previous research page (custom resolution, crop, infrared; not verified against the vendor software) is at `/experimental`.
-
 ## One-time setup
 
 ### Windows
@@ -215,7 +213,7 @@ Choices persist across page reloads and are locked during acquisition. Frame JSO
 sidecars record the applied options and effective register values; the source
 capture hash continues to identify the original baseline recording. The previous
 7200 dpi read-before-shutdown fix is included. These controls are on the main roll
-page; the separate experimental page has not been changed.
+page.
 
 Tests: `node tests/scan_options.test.cjs`, `node tests/scan_options_ui.test.cjs`,
 `node tests/capture_runtime.test.cjs`, and `node tests/roll.test.cjs`.
@@ -226,17 +224,6 @@ Black-level correction now clamps both limits of the 16-bit range. Older version
 could wrap a saturated channel to near zero when its measured dark offset was
 negative, causing magenta TIFF highlights and strongly tinted negative previews.
 Run `node tests/saturation.test.cjs` for the regression test.
-
-For an affected uncompressed RGB16 roll TIFF with its matching checksum sidecar:
-
-```sh
-python3 tools/repair_blacklevel_wrap.py input.tif input.json repaired.tif
-```
-
-This requires NumPy, refuses existing output paths, and writes a repaired TIFF
-plus a sidecar with the new checksum and repair counts. Use only for files produced
-by the old missing-upper-clamp pipeline. It changes identifiable wrapped samples
-to 65535; it does not restore sensor-clipped highlight detail.
 
 ## 7200 dpi stagger correction
 
@@ -251,8 +238,6 @@ The unsupported final eight raw lines are trimmed in addition to RGB alignment.
 With nominal RGB shifts [0,48,96], the square TIFF is 10248 × 7009 instead of
 10248 × 7013. Measured RGB shifts can change the final height. The per-frame JSON
 records `processing.columnStagger`, using native column parity before orientation.
-The separate experimental page already had its own stagger handling and is not
-changed by this fix.
 
 Regression: `node tests/stagger.test.cjs` covers direction/parity, sharp edges,
 fractional RGB alignment, full-height and averaged TIFFs, in-place output, preview
@@ -369,7 +354,7 @@ make test         # Go tests and the JavaScript test suite
 ```
 
 The only third-party Go module is `github.com/ebitengine/purego`, which lets the macOS build
-call IOKit without a C compiler. The helper embeds `ui.html`, `experimental.html` and the
+call IOKit without a C compiler. The helper embeds `ui.html` and the
 JavaScript files at build time. Opening `ui.html` straight from disk also works for a dry run
 (simulated scanner) without the helper.
 
@@ -388,5 +373,4 @@ synthesised and written as real files.
 
 ## License
 
-[MIT](LICENSE). The GL843 register semantics come from the Genesys Logic datasheet; a few
-hardware constants on the experimental page are cited from the SANE genesys backend.
+[MIT](LICENSE). The GL843 register semantics come from the Genesys Logic datasheet.

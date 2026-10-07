@@ -89,7 +89,6 @@ Run from this source directory:
 
 ```sh
 node tests/capture_runtime.test.cjs
-node tests/raw_tiff.test.cjs
 python3 tests/verify_captures.py /path/to/prescan.pcapng /path/to/3600ppifullframehdr.pcapng /path/to/7200ppifullframehdr.pcapng
 python3 tools/reconstruct_capture.py /path/to/prescan.pcapng prescan.png
 python3 tools/reconstruct_capture.py /path/to/3600ppifullframehdr.pcapng full.png

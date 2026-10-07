@@ -150,7 +150,7 @@ require('../capture_profiles.js');require('../capture_runtime.js');
   const flat=new Uint8Array(W*H*6).fill(7);assert.deepEqual(CaptureRuntime.measureShifts(flat,syn).shifts,[0,10,19]);
   const gs=CaptureRuntime.geometry(syn,ms.shifts);assert.equal(gs.lines,H-20);
   console.log(`Fractional alignment and per-scan shift measurement passed (true ${tG}/${tB}, measured ${ms.shifts[1]}/${ms.shifts[2]}; flat image falls back to recorded)`);
-  for(const page of ['ui.html','experimental.html']){
+  for(const page of ['ui.html']){
     const html=fs.readFileSync(require('node:path').join(__dirname,'..',page),'utf8');
     const script=html.split('<script>')[1].split('</script>')[0];new vm.Script(script);
     const ids=[...new Set([...script.matchAll(/\$\('(\w+)'\)/g)].map(m=>m[1]))].filter(id=>!html.includes('id="'+id+'"'));

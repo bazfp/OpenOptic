@@ -652,5 +652,5 @@
     return buf;
   }
 
-  globalThis.CaptureRuntime={collapseRecordedWaits,noiseStats,noiseModel,CALIBRATED_SHIFTS,livePreview,prepareProfile,SCAN_LINE_SETTINGS:['recorded','fewer','none'],run,geometry,measureShifts,decode,levels,renderRGB,alignedFrame,previewPlanes,tiffHeader,renderPreview,whiteStats,lampVerdict,darkVerdict,LAMP_LIMITS};
+  globalThis.CaptureRuntime={collapseRecordedWaits,noiseStats,noiseModel,CALIBRATED_SHIFTS,livePreview,prepareProfile,run,geometry,measureShifts,decode,levels,renderRGB,alignedFrame,previewPlanes,tiffHeader,renderPreview,whiteStats,lampVerdict,darkVerdict,LAMP_LIMITS};
 })();

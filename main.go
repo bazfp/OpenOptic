@@ -48,9 +48,6 @@ var motionJS []byte
 //go:embed enhance.js
 var enhanceJS []byte
 
-//go:embed experimental.html
-var experimentalHTML []byte
-
 const (
 	scannerVID  = 0x07B3
 	scannerPID  = 0x0C3B
@@ -305,13 +302,9 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if (r.URL.Path == "/" || r.URL.Path == "/experimental") && r.Method == http.MethodGet {
+	if r.URL.Path == "/" && r.Method == http.MethodGet {
 		inject := fmt.Sprintf("<script>window.NATIVE_USB={token:%q,defaultDir:%q,files:true};</script>\n</head>", s.token, s.outDir)
-		src := uiHTML
-		if r.URL.Path == "/experimental" {
-			src = experimentalHTML
-		}
-		page := bytes.Replace(src, []byte("</head>"), []byte(inject), 1)
+		page := bytes.Replace(uiHTML, []byte("</head>"), []byte(inject), 1)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Write(page)

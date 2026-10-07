@@ -50,17 +50,9 @@ button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 button:disabled{opacity:.45;cursor:default}
 button.primary{background:var(--amber);color:#1a1207;border-color:var(--amber)}
 button.danger{border-color:var(--bad);color:var(--bad)}
-.stack{display:grid;gap:6px}
-.stack button{width:100%;text-align:left;display:flex;justify-content:space-between}
-.stack button span.state{color:var(--dim);font-family:"JetBrains Mono",monospace;font-size:12px}
-.stack button.done span.state{color:var(--ok)}
-.chips{display:flex;flex-wrap:wrap;gap:6px;font-family:"JetBrains Mono",monospace;font-size:12px}
-.chips span{border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--dim)}
-.chips span.on{color:var(--amber);border-color:var(--amber2)}
 .stage{display:flex;flex-direction:column;min-height:0}
 .viewer{position:relative;flex:1;display:flex;align-items:center;justify-content:center;background:#0f1215;min-height:320px;padding:14px}
 .viewer canvas{max-width:100%;max-height:70vh;image-rendering:auto;background:#000;box-shadow:0 0 0 1px #2c323a}
-.viewer .crop{position:absolute;border:1.5px dashed var(--amber);pointer-events:none;box-shadow:0 0 0 9999px rgba(0,0,0,.35)}
 .viewer .hint{position:absolute;left:18px;bottom:12px;color:var(--dim);font-size:13px}
 .viewer .lamp{position:absolute;right:18px;top:12px;font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--dim)}
 .viewer .lamp.on{color:var(--amber)}.viewer .lamp.ir{color:var(--ir)}
@@ -73,10 +65,6 @@ button.danger{border-color:var(--bad);color:var(--bad)}
 .tabs{display:flex;gap:2px;border-top:1px solid var(--line)}
 .tabs button{border:0;border-radius:0;background:transparent;color:var(--dim);padding:8px 14px}
 .tabs button.active{color:var(--ink);box-shadow:inset 0 -2px 0 var(--amber)}
-.results{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;padding:12px 16px;border-top:1px solid var(--line)}
-.results figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden}
-.results canvas{width:100%;display:block;background:#000}
-.results figcaption{padding:6px 8px;font-size:12px;color:var(--ink2)}
 .small{font-size:12px;color:var(--dim)}
 details summary{cursor:pointer;color:var(--ink2);font-size:13px}
 kbd{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--amber)}
@@ -106,7 +94,6 @@ kbd{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--amber)}
 .roll .rollbar span{flex:1 1 200px}
 .next{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--amber);word-break:break-all}
 .big{font-size:16px;padding:11px 14px}
-.stack button kbd{font-family:"JetBrains Mono",monospace;font-size:12px;opacity:.75}
 .small{font-size:12px;color:var(--dim)}
 .status{font-size:13px;color:var(--ink2);margin:8px 0}
 .status.ok{color:var(--ok)}.status.err{color:var(--bad)}.status.busy{color:var(--amber)}
@@ -245,7 +232,7 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
       <div class="row"><button id="bMonitor" disabled>Monitor buttons (60 s)</button></div>
       <div class="note"><b class="lead">Logs every button press for 60 s.</b><ul><li>Records each scanner event and GPIO change (0x6C/0x6D). Copy the final log lines to map new buttons.</li></ul></div>
       <div class="row"><button id="bTrace" disabled>Save USB trace of last scan</button><button id="bDry">Dry run (no scanner)</button></div>
-      <div class="note"><b class="lead">Tools for checking the app.</b><ul><li><b>USB trace</b> — saved in the roll folder; check it with <code>tools/compare_trace.py</code>.</li><li><b>Dry run</b> — simulated scanner writing real files, to test naming and folders.</li><li><a href="/experimental" style="color:var(--amber)">Experimental page</a> — custom resolution, crop, IR; unverified.</li></ul></div>
+      <div class="note"><b class="lead">Tools for checking the app.</b><ul><li><b>USB trace</b> — saved in the roll folder; check it with <code>tools/compare_trace.py</code>.</li><li><b>Dry run</b> — simulated scanner writing real files, to test naming and folders.</li></ul></div>
     </details>
   </section>
 </aside>
@@ -357,8 +344,6 @@ async function writeRegs(pairs){ for(let i=0;i<pairs.length;i+=32){ const b=[]; 
 async function readReg(reg){ await ctlOut(0x83,0,[reg]); return (await ctlIn(0x84,0,1))[0]; }
 const status=async()=>readReg(0x41);
 const write8c=(idx,val)=>ctlOut(0x8C,idx,[val]);
-async function writeU16(reg,v){ await writeReg(reg,v>>8); await writeReg(reg+1,v&0xFF); }
-async function writeU24(reg,v){ await writeReg(reg,(v>>16)&0xFF); await writeReg(reg+1,(v>>8)&0xFF); await writeReg(reg+2,v&0xFF); }
 async function afeWrite(addr,val){ await ctlOut(0x83,0,[0x51,addr,0x3A,(val>>8)&0xFF,0x3B,val&0xFF]); }
 
 async function bulkEnd(){ // vendor capture: no 0x8D is ever sent; one 0x8E/0x18 poll per bulk header
@@ -563,7 +548,7 @@ async function connect(){
   epOut=(eps.find(e=>e.type==='bulk'&&e.direction==='out')||{endpointNumber:2}).endpointNumber;
   const bcd=(dev.deviceVersionMajor<<8)|(dev.deviceVersionMinor<<4)|dev.deviceVersionSubminor;
   $('devline').innerHTML=`<b>${dev.productName||'07b3:0c3b'}</b>  bcdDevice ${dev.deviceVersionMajor}.${dev.deviceVersionMinor}${dev.deviceVersionSubminor}  ${dev.backend||'WebUSB'}`;
-  if(bcd!==0x400) throw new Error('This scanner reports bcdDevice '+hex(bcd,4)+'. The recorded profiles are for the 7600i v1 (4.00) only; use the experimental page.');
+  if(bcd!==0x400) throw new Error('This scanner reports bcdDevice '+hex(bcd,4)+'. The recorded profiles are for the 7600i v1 (4.00) only.');
   await boot(); startScannerEvents(); await home(); startButtonPoll();
   if(dry){ dry=false; try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); settings={...defaults,...(s?.settings||{})}; records=s?.records||[]; }catch(e){} selected=null; toUI(); renderRoll(); }
   connected=true; lampOnAt=null;
