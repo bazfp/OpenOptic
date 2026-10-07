@@ -395,7 +395,6 @@
     return {attenuated,inpainted:holes,gamma,filledComponents,dividedComponents,confirmed,invisible,method:filled.method,exemplar:filled.exemplar,diffused:filled.diffused,mask};
   }
 
-  function inpaint(...a){ return runSync(inpaintSteps(...a)); }
   function* inpaintSteps(colour,W,H,hole,{radius=36,candidates=48,maxExemplar=400000,seed=1}={},p0=0,span=1){
     let rnd=seed>>>0||1; const rand=()=>((rnd=(rnd*1664525+1013904223)>>>0)/4294967296);
     const known=new Uint8Array(W*H), srcY=new Int32Array(W*H).fill(-1), srcX=new Int32Array(W*H).fill(-1);
@@ -479,5 +478,5 @@
     return {planes,g:{pixels:w,lines:h}};
   }
 
-  globalThis.Enhance={runSync,runAsync,irDetectSteps,irRepairSteps,fuseSteps,inpaintSteps,maskPreview,fitPasses,shiftRGB,components,attenuationExponent,boxBlur,morph,closing,shifted,registerSame,registerDust,fitAffine,mergeRange,fuse,irDetect,irRepair,inpaint,dilate,pngGray,previewFromAligned};
+  globalThis.Enhance={runSync,runAsync,irDetectSteps,irRepairSteps,fuseSteps,inpaintSteps,maskPreview,fitPasses,shiftRGB,components,attenuationExponent,boxBlur,morph,closing,shifted,registerSame,registerDust,fitAffine,mergeRange,fuse,irDetect,irRepair,dilate,pngGray,previewFromAligned};
 })();

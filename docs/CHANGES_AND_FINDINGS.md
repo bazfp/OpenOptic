@@ -45,7 +45,7 @@ Evidence and recovery:
 - The TIFF SHA-256 matches its sidecar. There are exactly 1,581,367 green samples
   below 20. Corrected nonnegative source values plus 19.9 cannot legitimately
   produce those values; they identify the overflow and can be saturated to 65535.
-- `tools/repair_blacklevel_wrap.py` produced test07-repaired.tif and a matching JSON
+- A one-off repair script (since removed) produced test07-repaired.tif and a matching JSON
   with a new checksum and recovery provenance. Full-image comparison confirmed
   every red/blue sample and every other green sample stayed identical. The TIFF
   header/tags, orientation and dimensions are retained. This restores the result
@@ -450,7 +450,7 @@ Warm-up (default 1 s; formerly 20 s) applies only when the lamp has been off. *K
 | Motor off, AFE gain/offset, protocol overrides (IR GPIO, XPASEL, 0x8C, header byte, LPERIOD, dummy px) | removed | research controls with no effect on recorded profiles |
 | Dry run (old) | replaced | the old one could not run capture profiles |
 
-Everything removed is still available on `/experimental`.
+Everything removed was kept on `/experimental` at the time; that page has since been removed.
 
 ### Helper changes
 
@@ -692,7 +692,6 @@ No dust removal, artistic retouching or film-specific colour profile is applied.
 | File | Purpose |
 |---|---|
 | `ui.html` | Roll scanner page: scan, save to folder, release, roll list |
-| `experimental.html` | Previous page incl. SANE-derived custom mode (unverified), served at /experimental |
 | `roll.js` | DOM-free roll pipeline: names, save-then-release, records |
 | `capture_sim.js` | Simulated scanner for dry runs and tests |
 | `files.go` | Helper endpoints that write roll files to disk and back the folder chooser |
@@ -711,14 +710,12 @@ No dust removal, artistic retouching or film-specific colour profile is applied.
 | `tests/simulated_scanner.test.cjs` | Simulated GL843 (auto-incrementing address, slow moves); fails on motor start mid-move; can emit a trace |
 | `tools/compare_trace.py` | Check an app USB trace against a vendor pcap; flags un-addressed status polls and register writes during a running move |
 | `tools/compare_frame.py` | Measure an app TIFF's framing against the official full-frame capture |
-| `tests/raw_tiff.test.cjs` | Raw/processed sample preservation, TIFF tags, preview independence and optional full-frame fixtures |
 | `docs/CAPTURE_VALIDATION.md` | Detailed captured acquisition baseline and original validation notes |
 
 Run from the extracted source directory:
 
 ```sh
 node tests/capture_runtime.test.cjs
-node tests/raw_tiff.test.cjs
 node tests/simulated_scanner.test.cjs sim-prescan.json sim-full.json
 python3 tools/compare_trace.py /path/to/prescan.pcapng sim-prescan.json
 python3 tools/compare_trace.py /path/to/3600ppifullframehdr.pcapng sim-full.json
