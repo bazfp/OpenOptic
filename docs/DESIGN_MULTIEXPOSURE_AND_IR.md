@@ -1,7 +1,7 @@
 # Design: multi-exposure and infrared smart repair
 
 Status: **implemented at 3600 dpi** (phases 1–5; see section 7). Evidence comes from the colour-film
-captures analysed in `CAPTURE_FINDINGS_COLOUR_ME_IR.md`. Each section separates what the captures
+captures analysed in [CAPTURE_FINDINGS_COLOUR_ME_IR.md](CAPTURE_FINDINGS_COLOUR_ME_IR.md). Each section separates what the captures
 show from what is proposed.
 
 ## 1. Summary

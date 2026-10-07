@@ -698,7 +698,7 @@ No dust removal, artistic retouching or film-specific colour profile is applied.
 | `files.go` | Helper endpoints that write roll files to disk and back the folder chooser |
 | `picker.go` | Operating-system folder dialogs (Windows, macOS, Linux) |
 | `access.go` | Linux udev-rule installer, file ownership under sudo, permission guidance |
-| `PROTOCOL.md` | Scanner protocol as evidenced by the captures |
+| `docs/PROTOCOL.md` | Scanner protocol as evidenced by the captures |
 | `motion.js` | Carriage stop and homing from recorded motor primitives |
 | `main.go` | Embed/serve capture assets; reject short USB OUT writes |
 | `capture_profiles.js` | Generated captured commands and uploaded calibration/motor data |
@@ -712,7 +712,7 @@ No dust removal, artistic retouching or film-specific colour profile is applied.
 | `tools/compare_trace.py` | Check an app USB trace against a vendor pcap; flags un-addressed status polls and register writes during a running move |
 | `tools/compare_frame.py` | Measure an app TIFF's framing against the official full-frame capture |
 | `tests/raw_tiff.test.cjs` | Raw/processed sample preservation, TIFF tags, preview independence and optional full-frame fixtures |
-| `CAPTURE_VALIDATION.md` | Detailed captured acquisition baseline and original validation notes |
+| `docs/CAPTURE_VALIDATION.md` | Detailed captured acquisition baseline and original validation notes |
 
 Run from the extracted source directory:
 

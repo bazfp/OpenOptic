@@ -3,7 +3,7 @@
 The 7200 profile now reads all 868,333,536 bytes before transfer completion and
 scan shutdown. The previous builder appended 402,392,140 missing capture bytes
 after teardown, causing a premature transition at 127.3 seconds (53.7% of the
-frame). See README_CHANGES_AND_FINDINGS.md for the evidence and validation.
+frame). See [CHANGES_AND_FINDINGS.md](CHANGES_AND_FINDINGS.md) for the evidence and validation.
 
 The main scan takes approximately 237.2 seconds. Capture verification can now be
 run on the supplied capture alone:
