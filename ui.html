@@ -199,7 +199,7 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
       <label class="check"><input type="checkbox" id="saveJpeg"> also save a preview JPEG</label>
       <div class="field"><label for="lampCheck">Illumination check</label>
         <select id="lampCheck"><option value="warn">warn (recommended)</option><option value="wait">wait and retry</option><option value="off">off</option></select></div>
-      <label class="check"><input type="checkbox" id="blackLevel"> correct black level (recommended)</label>
+      <span>Automatic dark and shading calibration</span>
       <div class="note"><b class="lead">TIFFs hold the scanner’s linear 16-bit data — not inverted or colour balanced, ready for a negative converter.</b><ul><li><b>Black-level correction</b> uses the dark calibration frame. Keep it on.</li><li><b>Film type</b> only changes the preview; <b>orientation</b> is stored as a TIFF tag.</li></ul><span class="foot">This includes both multi-exposure modes and infrared repair.</span></div>
     </details>
   </section>
@@ -613,10 +613,8 @@ async function acquire(key, requested=settings, options={}){
     async write(bytes){ const r=await dev.transferOut(epOut,bytes); if(r.status!=='ok'||(r.bytesWritten!==undefined&&r.bytesWritten!==bytes.length)) throw new Error('table upload failed'); rec({dir:'bulkout',len:bytes.length}); },
     async read(n){ const r=await dev.transferIn(epIn,n); if(r.status!=='ok') throw new Error('bulk read failed'); return new Uint8Array(r.data.buffer,r.data.byteOffset,r.data.byteLength); }
   };
-  // Lamp check: the replay uses the vendor's recorded AFE gains and shading tables, which are only
-  // right for a lamp in the state the vendor measured. Its white calibration reads (streamed in
-  // every sequence before the main scan) are compared with the vendor's; a cold or flickering lamp
-  // gives colour casts and banding, so the sequence is stopped and retried once the lamp settles.
+  // Calibrate from this job's probes; illumination checks can retry a flickering lamp.
+  hooks.calibrate=true;
   const started=performance.now(); let bytes, lamp;
   for(let attempt=1;;attempt++){
     lamp={};
@@ -627,12 +625,12 @@ async function acquire(key, requested=settings, options={}){
       const st=CaptureRuntime.whiteStats(data,p.frames[i]);
       if(needNoise&&kind!=='line') lamp[kind]={noise:CaptureRuntime.noiseStats(data,p.frames[i])};
       if(scanSettings.lampCheck==='off'&&p.acquisitionOptions?.pixelSampling!=='average'){ if(kind==='dark') lamp.dark.mean=st.mean; return; }
-      const v=kind==='dark'?CaptureRuntime.darkVerdict(st,p.lamp.dark):CaptureRuntime.lampVerdict(kind,st,p.lamp[kind]);
+      const v=kind==='dark'?{...CaptureRuntime.darkVerdict(st,p.lamp.dark),ok:true,issues:[]}:CaptureRuntime.lampVerdict(kind,st,p.lamp[kind]);
       lamp[kind]={...st,...v,noise:lamp[kind]?.noise};
       log(v.ok?'':'w',kind==='dark'
-        ?`black level (LED off): R ${v.delta[0]>0?'+':''}${v.delta[0]}, G ${v.delta[1]>0?'+':''}${v.delta[1]}, B ${v.delta[2]>0?'+':''}${v.delta[2]} counts vs the recorded calibration${v.ok?' (within tolerance)':scanSettings.blackLevel?' → corrected in the image':' → NOT corrected (option off): expect a colour cast'}`
+        ?'dark reference measured; live shading corrects each sensor column'
         :`illumination check, ${kind==='line'?'white line':'white shading'}: level ${v.levelPct>0?'+':''}${v.levelPct} %, G/R ${v.grPct>0?'+':''}${v.grPct} %, B/R ${v.brPct>0?'+':''}${v.brPct} %, ripple ${v.flickerPct} %${v.ok?' (within recorded reference limits)':' → '+v.issues.join('; ')}`);
-      if(kind==='dark'){ if(!v.ok&&!scanSettings.blackLevel) lamp.warning=[lamp.warning,v.issues[0]].filter(Boolean).join('; '); return; }
+      if(kind==='dark')return;
       if(!v.ok&&scanSettings.lampCheck==='wait'&&performance.now()-started<LAMP_MAX_WAIT_MS) throw new LampNotReady(v.issues);
       if(!v.ok) lamp.warning=[lamp.warning,...v.issues].filter(Boolean).join('; ');
     };
@@ -658,7 +656,7 @@ async function acquire(key, requested=settings, options={}){
     finally{ progress(0); }
   }
   if(lamp.warning) log('w',`scanned with the illumination outside the official range: ${lamp.warning}`);
-  return {bytes,profile:p,lamp,positioning};
+  return {bytes,profile:p,lamp,positioning,calibrated:true};
 }
 class LampNotReady extends Error{ constructor(issues){ super('illumination not settled: '+issues.join('; ')); this.issues=issues; } }
 const LAMP_RETRY_MS=15000, LAMP_MAX_WAIT_MS=60000;   // an LED settles at once; this only covers transients
@@ -703,7 +701,7 @@ for(const p of document.querySelectorAll('aside .note')){
   host.appendChild(b);
 }
 const bind=[['outDir','dir','text'],['prefix','prefix','text'],['nextNo','next','int'],['digits','digits','int'],['film','film','text'],['orient','orientation','int'],
-  ['tiffKind','tiff','text'],['pixels','pixels','text'],['profileSel','profile','text'],['saveJpeg','jpeg','check'],['mirror','mirror','check'],['warm','warm','int'],['keepLamp','keepLamp','check'],['lampCheck','lampCheck','text'],['blackLevel','blackLevel','check'],['pixelSampling','pixelSampling','text'],['multiExposure','multiExposure','text'],['meFactor','meFactor','text'],['infrared','infrared','text'],['dummyLines','dummyLines','text'],['btn3','btn3','text'],['btn2','btn2','text']];
+  ['tiffKind','tiff','text'],['pixels','pixels','text'],['profileSel','profile','text'],['saveJpeg','jpeg','check'],['mirror','mirror','check'],['warm','warm','int'],['keepLamp','keepLamp','check'],['lampCheck','lampCheck','text'],['pixelSampling','pixelSampling','text'],['multiExposure','multiExposure','text'],['meFactor','meFactor','text'],['infrared','infrared','text'],['dummyLines','dummyLines','text'],['btn3','btn3','text'],['btn2','btn2','text']];
 function toUI(){ for(const [id,k,t] of bind){ if(t==='check') $(id).checked=!!settings[k]; else $(id).value=settings[k]; } refreshName(); }
 function fromUI(){ for(const [id,k,t] of bind){ settings[k]=t==='check'?$(id).checked:t==='int'?parseInt($(id).value||'0',10):$(id).value.trim(); }
   const clean=Roll.cleanPrefix(settings.prefix); if(clean!==settings.prefix){ settings.prefix=clean; $('prefix').value=clean; } persist(); refreshName(); }

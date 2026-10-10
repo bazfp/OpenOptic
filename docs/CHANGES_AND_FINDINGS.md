@@ -663,7 +663,13 @@ Every captured vendor control payload and bulk-OUT payload is preserved in order
 
 Acknowledgements, bulk completion, data readiness and terminal motor status can be polled longer than their recorded counts, with timeouts. Automatic return is checked against the home sensor after acquisition. Errors abort the operation; cancellation takes effect at an in-flight transfer boundary before parking.
 
-**Calibration limitation:** capture mode reuses the recorded AFE and hardware-shading coefficients. It executes and drains the calibration image reads but does not recompute vendor coefficients from them. The vendor's adaptive calibration and shading-table format have not been fully reverse-engineered. This mode is a reproducible command-matching baseline for the recorded unit, not a new adaptive calibration implementation. Lamp changes or different conditions can affect image quality.
+**Live calibration:** normal acquisition replaces recorded AFE and shading values with measurements
+from the existing probe reads. Initial gain uses the maximum four-pixel integer mean; offsets use
+32 black pixels. Dark/white references trim eight samples from each end of 128 lines. Dark smoothing
+uses a forward 100-value mean, separately by parity at 7200 dpi. All eight supplied colour/IR
+captures match. The inclusive dark outlier threshold 64 fits them but remains uncertain within
+63..67. Final colour gain increments remain 0/+1/+2.
+Exact recorded replay remains available by omitting `hooks.calibrate` from `CaptureRuntime.run`.
 
 ## Reconstruction changes
 

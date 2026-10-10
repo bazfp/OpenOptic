@@ -112,7 +112,7 @@ Existing files are never overwritten: to redo a frame, select it and press **Res
 | Dense, underexposed or high-contrast negatives | **Multi-exposure → extended range** (3600 dpi) |
 | Slides | **Film → positive (slide)** |
 
-The defaults (Lanczos-3 line doubling, no dummy lines, black-level correction on) are the best
+The defaults (Lanczos-3 line doubling, no dummy lines, automatic calibration) are the best
 choices for almost everyone.
 
 ## Dust and scratch repair
@@ -212,7 +212,7 @@ Dmax = `log10(hi/lo)` and an offset from `lo`. Measuring Dmin from the film base
 | TIFF | **Aligned RGB 16-bit** (default), **aligned + raw USB** (also the unprocessed sensor data, for analysis) or **raw USB only**. Multi-exposure and infrared need an aligned TIFF. |
 | Also save a preview JPEG | A small JPEG of the preview next to the TIFF. |
 | Illumination check | Compares each scan's white calibration with the scanner's reference. **Warn** (default) scans anyway and notes it in the record; **wait and retry** waits for the LED to settle and rescans; **off** skips the check. |
-| Correct black level | Subtracts the scanner's dark level. Keep it on. |
+| Automatic calibration | Each scan measures analogue gain, offsets and per-column dark/white shading. |
 
 **Advanced**
 
@@ -329,17 +329,16 @@ automatically, together with colour alignment, and the unsupported final eight r
 trimmed: with nominal shifts the TIFF is 10,248 × 7,009 instead of 10,248 × 7,013. Recorded under
 `processing.columnStagger`.
 
-**Black level and highlights.** The dark calibration frame gives each channel's black level, which
-is subtracted with clamping at both ends of the 16-bit range, so saturated highlights stay at
-65535.
+**Black level and highlights.** Each scan measures per-column dark and white references and
+uploads fresh shading coefficients to the scanner. No additional global black offset is subtracted.
 
 **Horizontal flip.** Applied after alignment and stagger correction (which follow the sensor's
 native column order) and before the orientation tag. Recorded under
 `processing.horizontalMirror`.
 
 **Sensor pixel averaging** (experimental) sets GL843 register 0x03 bit 6 on every write of the
-scan, including the calibration reads and framing previews. The shading tables stay the
-deletion-mode ones, so live calibration checks compare against deletion-mode references. No
+scan, including the calibration reads and framing previews. Shading is recomputed from those
+reads; illumination checks still compare against deletion-mode references. No
 image-quality improvement has been verified on hardware. At 7200 dpi there's nothing to average.
 
 **Film stocks.** Scanning isn't stock-specific: calibration is read through the holder, not the
@@ -458,8 +457,8 @@ runs in the page; the Go helper only does USB and file access.
 
 Each resolution has a fixed scan profile (`capture_profiles.js`): the GL843 register settings,
 analogue front-end gains and offsets, motor tables and hardware shading for that mode, validated
-on a 7600i v1. Every scan checks the calibration live: its white and dark calibration reads are
-compared with the profile's references, and black level is corrected per scan. On top of the
+on a 7600i v1. Every scan recomputes analogue gains, offsets and hardware shading from its
+probe reads. White reads are also compared with the profile's illumination references. On top of the
 profiles the app can drop CCD dummy lines, lengthen the exposure and run the infrared pass. Every
 register-level detail is documented in [PROTOCOL.md](PROTOCOL.md).
 
