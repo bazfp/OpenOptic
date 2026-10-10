@@ -14,6 +14,91 @@
     return false;
   };
 
+  // GL843/AD9826: live probe values replace the captured AFE and shading writes.
+  // Eight captured colour/IR passes validate the integer calculations.
+  class Calibration {
+    constructor(p){
+      this.first=p.lamp.line.frame-2; this.white=p.lamp.shading.frame; this.darkFrame=p.lamp.dark.frame;
+      assert(this.darkFrame===this.first+5&&this.white===this.first+6,'Unsupported calibration sequence');
+      this.pixels=p.frames[this.white].pixels; this.ir=!!(p.frames[this.white].regs[168]&4);
+      this.stride=p.dpi===7200?2:1; this.phase=-1; this.probes={}; this.offsetWrites=[0,0,0]; this.at=0;
+    }
+    samples(data){ return new DataView(data.buffer,data.byteOffset,data.byteLength); }
+    reference(data){
+      assert(data.length===128*this.pixels*6,'Incomplete calibration reference');
+      const v=this.samples(data), out=new Int32Array(this.pixels*3), a=new Uint16Array(128);
+      for(let s=0;s<out.length;s++){
+        for(let y=0;y<128;y++)a[y]=v.getUint16((y*out.length+s)*2,true);
+        a.sort(); let sum=0; for(let y=8;y<120;y++)sum+=a[y]; out[s]=Math.floor(sum/112);
+      }
+      return out;
+    }
+    pack(gain){
+      const out=new Uint8Array(Math.ceil(this.pixels/42)*512), v=this.samples(out);
+      for(let x=0;x<this.pixels;x++)for(let c=0;c<3;c++){
+        const at=Math.floor(x/42)*512+(x%42)*12+c*4;
+        v.setUint16(at,this.dark[x*3+c],true); v.setUint16(at+2,typeof gain==='number'?gain:gain[x*3+c],true);
+      }
+      return out;
+    }
+    frameDone(i,data){
+      this.phase=i-this.first; const phase=this.phase, v=this.samples(data);
+      if([0,1,3,4].includes(phase)){
+        assert(data.length===512*6,'Incomplete AFE probe');
+        this.probes[phase]=[0,1,2].map(c=>{let sum=0;for(let x=19;x<51;x++)sum+=v.getUint16((x*3+c)*2,true);return Math.floor(sum/32);});
+      }
+      if(phase===1||phase===4){
+        const low=this.probes[phase-1], span=this.probes[phase].map((a,c)=>a-low[c]);
+        assert(span.every(a=>a>0),'Nonpositive AFE offset response');
+        const zero=low.map((a,c)=>128-Math.floor(a*127/span[c]));
+        if(phase===1)this.zeroLow=zero;
+        else{
+          this.zeroHigh=zero; this.darkOffset=zero.map((a,c)=>a+Math.floor((this.ir?0:1280)*127/span[c]));
+          this.whiteOffset=this.darkOffset.map((a,c)=>a+Math.floor((this.ir?2048:256)*127/span[c]));
+        }
+      }else if(phase===2){
+        const peak=[0,0,0], pixels=data.length/6;
+        for(let x=0;x<pixels;x+=4){const n=Math.min(4,pixels-x);
+          for(let c=0;c<3;c++){let sum=0;for(let j=0;j<n;j++)sum+=v.getUint16(((x+j)*3+c)*2,true);peak[c]=Math.max(peak[c],Math.floor(sum/n));}}
+        assert(peak.every(a=>a>0),'Zero lamp response during AFE calibration');
+        this.gain=peak.map(a=>Math.max(0,Math.min(63,Math.floor(378*(65535-a)/(5*65535)))));
+      }else if(i===this.darkFrame){
+        const raw=this.reference(data); this.dark=raw.slice();
+        for(let parity=0;parity<this.stride;parity++)for(let c=0;c<3;c++){
+          let sum=0,count=0;
+          for(let x=this.pixels-1-((this.pixels-1-parity)%this.stride);x>=0;x-=this.stride){
+            sum+=raw[x*3+c]; count++;
+            if(count>100){sum-=raw[(x+100*this.stride)*3+c];count=100;}
+            const mean=Math.floor(sum/count);
+            // Inclusive 64 fits the captures; strict vendor threshold remains configurable (64..68).
+            if(Math.abs(raw[x*3+c]-mean)<=64)this.dark[x*3+c]=mean;
+          }
+        }
+        this.table=this.pack(8192);
+      }else if(i===this.white){
+        const white=this.reference(data), target=this.ir?[77824,77824,77824]:[79380,79119,82739];
+        assert(white.every(a=>a>0),'Zero white reference during shading calibration');
+        this.table=this.pack(white.map((a,s)=>Math.min(65535,Math.floor(target[s%3]*8192/a)))); // already dark-corrected
+      }
+      this.at=0;
+    }
+    control(op){
+      if(op.rt!==0x40||op.value!==0x83||op.data[0]!==0x51)return op;
+      const data=op.data.slice(), addr=data[1]; let value;
+      if(addr>=2&&addr<=4&&this.phase>=2){const c=addr-2;value=Math.min(63,this.gain[c]+(this.phase>=6&&!this.ir?c:0));}
+      else if(addr>=5&&addr<=7){const c=addr-5;let offset;
+        if(this.phase===1)offset=this.zeroLow[c];
+        else if(this.phase===4)offset=(this.offsetWrites[c]++===0?this.zeroHigh:this.darkOffset)[c];
+        else if(this.phase>=5)offset=this.whiteOffset[c];
+        if(offset!==undefined){assert(Math.abs(offset)<=255,'AFE offset outside nine-bit sign-magnitude range');value=offset<0?256|-offset:offset;}
+      }
+      if(value===undefined)return op;
+      for(let j=0;j<data.length;j+=2){if(data[j]===0x3a)data[j+1]=value>>8;if(data[j]===0x3b)data[j+1]=value&255;}
+      return {...op,data};
+    }
+    upload(size){const out=this.table?.subarray(this.at,this.at+size);assert(out?.length===size,'Incomplete live shading upload');this.at+=size;return out;}
+  }
+
   // Prepare once before homing or other USB access. Recorded profiles stay immutable.
   function prepareProfile(profile, options={}) {
     const pixelSampling=options.pixelSampling??'deletion';
@@ -41,7 +126,7 @@
     if(lineSel!==recordedLines||exposureMultiplier>1) out=withLineSel(out,recordedLines,lineSel,exposureMultiplier);
     out.acquisitionOptions={pixelSampling,exposureMultiplier,averagingReducesPixels:pixelSampling==='average'&&profile.dpi<7200,
       dummyLines:{setting:dummyLines,recorded:recordedLines,used:lineSel},exposure:exposureMultiplier>1?{multiplier:exposureMultiplier,lPeriod:out.scan.lPeriod,bufsel:0x08,note:'line period ×k, no dummy lines, motor cruise scaled; calibration at 1× (as SilverFast)'}:null,
-      calibration:pixelSampling==='average'?'recorded deletion-mode AFE and shading; live checks are comparisons, not fresh calibration':'recorded vendor AFE and shading'};
+      calibration:'recorded vendor AFE and shading'};
     return out;
   }
 
@@ -139,6 +224,7 @@
     for(let i=0;i<profile.frames.length;i++)
       assert(planned.get(i)===profile.frames[i].bytes,'Invalid capture profile: incomplete frame '+i);
     const ops=collapseRecordedWaits(profile.ops);
+    const calibration=hooks.calibrate?new Calibration(profile):null; // omitted for exact capture replay
     const regs={}, frames=new Map(); let address=0, lastStatus=null, moveStartedAt=null, moveEvents=null;
     const lampFrames=profile.lamp?[profile.lamp.line.frame,profile.lamp.shading.frame,profile.lamp.dark.frame]:[];
     const check=hooks.check||(()=>{}), sleep=hooks.sleep||(ms=>new Promise(r=>setTimeout(r,ms)));
@@ -255,11 +341,15 @@
         }
         await sleep(op.ms);continue;
       }
-      if(op.kind==='control'){await ctl(op);continue;}
-      if(op.kind==='write'){await io.write(bytes64(op.data));continue;}
+      if(op.kind==='control'){await ctl(calibration?calibration.control(op):op);continue;}
+      if(op.kind==='write'){
+        await io.write(calibration&&regs[0x5b]===0x10&&regs[0x5c]===0
+          ?calibration.upload(op.length||bytes64(op.data).length):bytes64(op.data));continue;
+      }
       if(op.kind==='read'){
         const f=profile.frames[op.frame]; let state=frames.get(op.frame);
-        if(!state){const keep=op.frame===profile.mainFrame||lampFrames.includes(op.frame);
+        if(!state){const keep=op.frame===profile.mainFrame||lampFrames.includes(op.frame)||
+            (calibration&&op.frame>=calibration.first&&op.frame<=calibration.white);
           state={got:0,data:keep?new Uint8Array(f.bytes):null};frames.set(op.frame,state);}
         let remaining=op.length;
         // The scanner delivers a line every (LINESEL+1) line periods and its buffer is small: if the
@@ -301,8 +391,10 @@
         }
         if(main&&state.got===f.bytes&&started&&hooks.log)hooks.log(`image transferred at ${(sinceStart/((now()-started)/1000)/1e6).toFixed(2)} MB/s (needs ${(need/1e6).toFixed(2)})`);
         // white calibration reads: let the caller judge the lamp before the main scan starts
-        if(state.got===f.bytes&&lampFrames.includes(op.frame)&&hooks.frameDone){
-          const d=state.data; state.data=null; await hooks.frameDone(op.frame,d);
+        if(state.got===f.bytes&&op.frame!==profile.mainFrame&&state.data){
+          const d=state.data; state.data=null;
+          if(calibration)calibration.frameDone(op.frame,d);
+          if(lampFrames.includes(op.frame)&&hooks.frameDone)await hooks.frameDone(op.frame,d);
         }
       }
     }
@@ -652,5 +744,5 @@
     return buf;
   }
 
-  globalThis.CaptureRuntime={collapseRecordedWaits,noiseStats,noiseModel,CALIBRATED_SHIFTS,livePreview,prepareProfile,run,geometry,measureShifts,decode,levels,renderRGB,alignedFrame,previewPlanes,tiffHeader,renderPreview,whiteStats,lampVerdict,darkVerdict,LAMP_LIMITS};
+  globalThis.CaptureRuntime={Calibration,collapseRecordedWaits,noiseStats,noiseModel,CALIBRATED_SHIFTS,livePreview,prepareProfile,run,geometry,measureShifts,decode,levels,renderRGB,alignedFrame,previewPlanes,tiffHeader,renderPreview,whiteStats,lampVerdict,darkVerdict,LAMP_LIMITS};
 })();

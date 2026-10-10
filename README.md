@@ -159,9 +159,12 @@ OpenOptic shows the revision when you press Connect. On Linux, `lsusb -v -d 07b3
 bcdDevice` shows it too.
 
 **Why only one chip?** OpenOptic drives the scanner at the lowest level: register settings,
-motor tables, lamp and calibration for each scan mode, all tuned and validated for the GL843 in
+motor tables and lamp settings for each scan mode, all tuned and validated for the GL843 in
 the 7600i. Every chip has its own register map, and every model has its own sensor, optics and
 motor, so each needs its own validated profiles.
+
+Each scan measures fresh analogue gains, offsets and dark/white shading from its calibration
+reads, including infrared. The calculations match all eight reference captures.
 
 **The 8200i and the GL845.** The OpticFilm 8200i is built on the **GL845**, the same chip as the
 later 7600i (the 8200i SE is built on the newer **GL128** instead). The GL845 is a close

@@ -38,9 +38,10 @@
     }
     const started=new Date(), acq=await ctx.acquire(settings.profile), {bytes,profile,trace,lamp,positioning}=acq;
     const align=CaptureRuntime.measureShifts(bytes,profile), g=CaptureRuntime.geometry(profile,align.shifts);
-    const offsets=settings.blackLevel&&lamp?.dark?lamp.dark.delta:null;   // per-channel black-level correction
+    const offsets=!acq.calibrated&&settings.blackLevel&&lamp?.dark?lamp.dark.delta:null;
     const pending={number,base:baseName(settings.prefix,number,settings.digits),names,overwrite,
-      settings:{...settings},started:started.toISOString(),bytes,profile,g,align,lamp:lamp||null,positioning:positioning||null,offsets,preview:null,trace:trace||null,saved:[]};
+      settings:{...settings},started:started.toISOString(),bytes,profile,g,align,lamp:lamp||null,positioning:positioning||null,
+      calibrated:!!acq.calibrated,offsets,preview:null,trace:trace||null,saved:[]};
     let pv;
     if(acq.long||acq.ir){
       await processPasses(pending,acq,ctx.log||(()=>{}),ctx.progress);
@@ -187,10 +188,11 @@
         registers:f.regs,moves:profile.moves,
         positioningStop:p.positioning?{...p.positioning,note:'first positioning move: stopped on the scanner event 0x08 (interrupt endpoint) when available, else at the recorded time'}:null,
         scanTiming:profile.scan?{lineSel:profile.scan.lineSel,lineSeconds:profile.scan.lineSeconds,bytesPerSecond:profile.scan.bytesPerSecond,motorCruise:profile.motorCruise||'recorded'}:null,
-        options:profile.acquisitionOptions||{pixelSampling:'deletion',exposureMultiplier:1,dummyLines:{setting:'recorded',recorded:profile.scan?.lineSel??null,used:profile.scan?.lineSel??null},
-          averagingReducesPixels:false,calibration:'recorded vendor AFE and shading'},
+        options:{...(profile.acquisitionOptions||{pixelSampling:'deletion',exposureMultiplier:1,
+          dummyLines:{setting:'recorded',recorded:profile.scan?.lineSel??null,used:profile.scan?.lineSel??null},averagingReducesPixels:false}),
+          calibration:p.calibrated?'live AFE and shading':'recorded vendor AFE and shading'},
         illuminationCheck:p.lamp?{...p.lamp,reference:profile.lamp,limits:CaptureRuntime.LAMP_LIMITS}:null,
-        hardwareShading:'recorded vendor shading tables applied by the scanner before USB transfer'},
+        hardwareShading:(p.calibrated?'live':'recorded vendor')+' shading tables applied by the scanner before USB transfer'},
       processing:{multiExposure:p.processing?.multiExposure||null,infrared:p.processing?.infrared?{...p.processing.infrared,overlay:p.repairMask?{...p.repairMask,note:`${p.repairMask.mode==='repair'?'repaired':'detected'} defects at preview size (orientation as stored, before the TIFF orientation tag); 8-bit PNG, 255 = defect`}:null}:null,channelShiftLines:align.shifts,channelShiftSource:align.used,channelShiftConfidence:align.confidence,
         recordedChannelShifts:profile.shifts,interpolation:settings.pixels==='lanczos'?'Lanczos-3 kernel (alignment and line reduction in one resample)':'linear between bracketing lines',
         columnStagger:{rawLineOffsets:g.stagger||[],

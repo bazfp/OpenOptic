@@ -84,8 +84,8 @@ function tiffInfo(b){
 
   // 4a. black level: the measured dark-frame difference is subtracted and recorded
   {const delta=[0,40,0];
-   const ctxB=(settings,number)=>({...ctx(settings,number),acquire:async key=>{const pr=CAPTURE_PROFILES[key];const sm=CaptureSim.create(pr);
-     return {bytes:await CaptureRuntime.run(pr,sm,{sleep:async()=>{}}),profile:pr,lamp:{dark:{delta,ok:false}}};}});
+   const ctxB=(settings,number,calibrated=false)=>({...ctx(settings,number),acquire:async key=>{const pr=CAPTURE_PROFILES[key];const sm=CaptureSim.create(pr);
+     return {bytes:await CaptureRuntime.run(pr,sm,{sleep:async()=>{}}),profile:pr,lamp:{dark:{delta,ok:false}},calibrated};}});
    const rb=await Roll.scanFrame(ctxB({...S,blackLevel:true},30));
    const side=JSON.parse(store.files.get('Roll12_30.json'));
    assert.deepEqual(side.processing.blackLevelCorrection.counts,delta);
@@ -95,6 +95,11 @@ function tiffInfo(b){
    const diffs=[];for(let i=1;i<3000;i+=3)diffs.push(g16(without,i)-g16(withC,i));
    assert(diffs.every(d=>d===40),'green channel must be 40 counts lower with the correction');
    assert.equal(JSON.parse(store.files.get('Roll12_31.json')).processing.blackLevelCorrection,null);
+   await Roll.scanFrame(ctxB({...S,blackLevel:true},32,true));
+   const liveSide=JSON.parse(store.files.get('Roll12_32.json'));
+   assert.equal(liveSide.processing.blackLevelCorrection,null,'live shading must not receive a second dark correction');
+   assert.equal(liveSide.acquisition.options.calibration,'live AFE and shading');
+   assert(tiffInfo(store.files.get('Roll12_32.tif')).strip.equals(without));
    console.log('black level: measured difference '+delta.join('/')+' subtracted from the image and recorded in the sidecar');}
 
   // 4b. preview rendering: a dense highlight band on a negative must stay tonal, not clip
