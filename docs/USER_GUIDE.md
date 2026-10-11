@@ -364,8 +364,7 @@ buffer fills. OpenOptic drops them by default at 1440 and 3600 dpi, as SANE does
 
 At 7200 dpi, **None** can't be selected: without dummy lines the scanner would send 10.98 MB/s,
 more than the helper sustains, so the buffer fills and the scanner backtracks instead of
-finishing. Choosing 7200 dpi switches a **None** setting to **Standard**. Line doubling → off
-doesn't help, because the data rate per line is the same.
+finishing. Choosing 7200 dpi switches a **None** setting to **Standard**.
 
 Only the main scan changes. LINESEL is written in its start write, and the motor tables' cruise
 period is scaled by the same factor (14000 to 7000 at 3600 dpi; 42000 to 28000 or 14000 at 7200

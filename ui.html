@@ -196,11 +196,12 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
     <details id="outPanel"><summary>Output options</summary>
       <div class="field"><label for="tiffKind">TIFF</label>
         <select id="tiffKind"><option value="aligned">aligned RGB 16-bit</option><option value="both">aligned + raw USB</option><option value="raw">raw USB only</option></select></div>
+      <div class="note"><b class="lead">TIFFs hold the scanner’s linear 16-bit data — not inverted or colour balanced, ready for a negative converter.</b><ul><li><b>Film type</b> only changes the preview; <b>orientation</b> is stored as a TIFF tag.</li></ul><span class="foot">This includes both multi-exposure modes and infrared repair.</span></div>
       <label class="check"><input type="checkbox" id="saveJpeg"> also save a preview JPEG</label>
       <div class="field"><label for="lampCheck">Illumination check</label>
         <select id="lampCheck"><option value="warn">warn (recommended)</option><option value="wait">wait and retry</option><option value="off">off</option></select></div>
       <div class="field"><label>Calibration</label><span>automatic, every scan</span></div>
-      <div class="note"><b class="lead">TIFFs hold the scanner’s linear 16-bit data — not inverted or colour balanced, ready for a negative converter.</b><ul><li><b>Calibration</b> — each scan measures analogue gain and offsets, then per-column dark and white shading, which the scanner applies before sending the image. No separate black level is subtracted.</li><li><b>Film type</b> only changes the preview; <b>orientation</b> is stored as a TIFF tag.</li></ul><span class="foot">This includes both multi-exposure modes and infrared repair.</span></div>
+      <div class="note"><b class="lead">Every scan calibrates itself just before the frame; there is nothing to set.</b><ul><li><b>Gain and offset</b> — short probe reads set the analogue gain and black offset for each colour.</li><li><b>Shading</b> — dark and white reads (LED off, then on) give a correction for every sensor column, which the scanner applies before sending the image.</li></ul><span class="foot">No extra black level is subtracted afterwards.</span></div>
     </details>
   </section>
 

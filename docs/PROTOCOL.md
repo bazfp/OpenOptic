@@ -366,8 +366,7 @@ buffer full state will be set. The scanner execute backtracking." The carriage t
 BWDSTEP, re-accelerates over table two (FASTNO) and re-scans. A host that cannot sustain the rate
 above therefore makes the carriage move back and forth repeatedly — audible, and the scan stalls
 rather than finishing. This is why the rate matters most at 7200 dpi.
-OpenOptic therefore rejects a 1× 7200 dpi scan without dummy lines (10.98 MB/s); single sampling
-halves the rows but not the rate, so it is rejected too.
+OpenOptic therefore rejects a 1× 7200 dpi scan without dummy lines (10.98 MB/s).
 
 **The host may also read fewer lines than LINCNT.** The prescan programs 5,648 and reads 2,824;
 reading stops, the buffer fills and the scan halts. The delivered image is the first 2,824 lines.
