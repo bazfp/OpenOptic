@@ -112,6 +112,9 @@
     const recordedLines=profile.scan?profile.scan.lineSel:0;
     // A longer exposure is a longer line period without dummy lines (as SilverFast's 3× pass).
     const lineSel=exposureMultiplier>1?0:dummyLines==='none'?0:dummyLines==='fewer'?Math.max(0,recordedLines-1):recordedLines;
+    // Without dummy lines a 1× 7200 dpi scan sends 10.98 MB/s (single sampling too); hosts fall
+    // behind, the buffer fills and the scanner backtracks instead of finishing.
+    if(profile.dpi===7200&&lineSel===0&&exposureMultiplier===1) invalid('7200 dpi needs dummy lines: without them the scanner sends 10.98 MB/s and stalls. Choose one fewer or standard.');
     if(pixelSampling==='deletion'&&lineSel===recordedLines&&exposureMultiplier===1&&!singleSampling) return profile; // Default wire sequence is unchanged.
     let out={...profile,frames:profile.frames.map(f=>({...f,regs:{...f.regs}}))};
     if(pixelSampling==='average'){

@@ -3,6 +3,7 @@ require('../capture_profiles.js');require('../capture_runtime.js');
 for(const [key,base] of Object.entries(CAPTURE_PROFILES)){
   const original=JSON.stringify(base);
   for(const dummyLines of ['none','recorded'])for(const exposureMultiplier of [1,3]){
+    if(base.dpi===7200&&dummyLines==='none'&&exposureMultiplier===1)continue;   // rejected: 10.98 MB/s stalls
     const double=CaptureRuntime.prepareProfile(base,{dummyLines,exposureMultiplier});
     const p=CaptureRuntime.prepareProfile(base,{dummyLines,exposureMultiplier,singleSampling:true});
     const f=p.frames[p.mainFrame], b=base.frames[base.mainFrame];
@@ -22,7 +23,6 @@ for(const [key,base] of Object.entries(CAPTURE_PROFILES)){
     if(key==='full7200'){
       assert.deepEqual(g.stagger,[4,0]);
       assert.equal(f.lines,7061);assert.equal(f.bytes,434166768);
-      if(dummyLines==='none'&&exposureMultiplier===1)assert.equal(p.motorCruise.used,7000);
     }
     assert(p.acquisitionOptions.singleSampling);
     const planned=p.ops.filter(o=>o.kind==='read'&&o.frame===p.mainFrame).reduce((a,o)=>a+o.length,0);

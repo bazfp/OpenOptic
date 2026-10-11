@@ -348,7 +348,7 @@ C' = C · k · (LINESEL' + 1) / (LINESEL + 1)      k = exposure multiplier (LPER
 | Main scan | LINESEL | LPERIOD | Cruise | Line time | 3600 dpi | 7200 dpi | Host rate 3600 / 7200 |
 |---|---|---|---|---|---|---|---|
 | as recorded | 1 / 2 | 14,000 / 42,000 | 14,000 / 42,000 | 11.2 / 16.8 ms | 79 s | 3 min 57 s | 2.75 / 3.66 MB/s |
-| no dummy lines | 0 | 14,000 | 7,000 / 14,000 | 5.6 ms | 39.5 s | 79 s | 5.49 / 10.98 MB/s |
+| no dummy lines | 0 | 14,000 | 7,000 / 14,000 | 5.6 ms | 39.5 s | 79 s (rejected) | 5.49 / 10.98 MB/s |
 | exposure ×2 | 0 | 28,000 | 14,000 | 11.2 ms | 79 s | — | 2.75 MB/s |
 | exposure ×3 (= SilverFast's ME pass, byte for byte) | 0 | 42,000 | 21,000 | 16.8 ms | 118.5 s | — | 1.83 MB/s |
 | exposure ×4 | 0 | 56,000 | 28,000 | 22.4 ms | 158 s | — | 1.37 MB/s |
@@ -366,6 +366,8 @@ buffer full state will be set. The scanner execute backtracking." The carriage t
 BWDSTEP, re-accelerates over table two (FASTNO) and re-scans. A host that cannot sustain the rate
 above therefore makes the carriage move back and forth repeatedly — audible, and the scan stalls
 rather than finishing. This is why the rate matters most at 7200 dpi.
+OpenOptic therefore rejects a 1× 7200 dpi scan without dummy lines (10.98 MB/s); single sampling
+halves the rows but not the rate, so it is rejected too.
 
 **The host may also read fewer lines than LINCNT.** The prescan programs 5,648 and reads 2,824;
 reading stops, the buffer fills and the scan halts. The delivered image is the first 2,824 lines.

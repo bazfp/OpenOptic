@@ -13,7 +13,12 @@ const tables=p=>{ let slot=null; const out=[];
     const base=CAPTURE_PROFILES[key], original=JSON.stringify(base), L=base.scan.lineSel, LP=base.scan.lPeriod;
     assert.equal(CaptureRuntime.prepareProfile(base,{dummyLines:'recorded'}),base,'default wire sequence unchanged');
     for(const setting of ['fewer','none']){
-      const p=CaptureRuntime.prepareProfile(base,{dummyLines:setting}), L2=setting==='none'?0:Math.max(0,L-1);
+      const L2=setting==='none'?0:Math.max(0,L-1);
+      if(base.dpi===7200&&L2===0){
+        for(const singleSampling of [false,true])assert.throws(()=>CaptureRuntime.prepareProfile(base,{dummyLines:setting,singleSampling}),
+          e=>e.name==='ScanConfigurationError'&&/10\.98 MB\/s/.test(e.message),'7200 dpi without dummy lines would stall');
+        continue; }
+      const p=CaptureRuntime.prepareProfile(base,{dummyLines:setting});
       if(L2===L){ assert.equal(p,base); continue; }
       const before=tables(base), after=tables(p), changed=[];
       assert.equal(p.ops.length,base.ops.length);

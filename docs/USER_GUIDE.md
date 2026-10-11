@@ -88,7 +88,7 @@ press Ctrl+C in it, to quit.
    |---|---|---|---|
    | 1440 dpi | about 2,050 × 1,400 px | ~16 MB | ~16 s |
    | **3600 dpi** | about 5,100 × 3,500 px (18 MP) | ~103 MB | ~40 s |
-   | 7200 dpi | about 10,250 × 7,000 px (72 MP) | ~411 MB | ~79 s |
+   | 7200 dpi | about 10,250 × 7,000 px (72 MP) | ~411 MB | ~4 min (2 min 38 s with one fewer dummy line) |
 
    7200 dpi needs about 1.4 GB of free memory in the browser.
 4. **Load a frame** and press **Check framing** (or P) for a quick look.
@@ -354,13 +354,18 @@ film, and matched across Lucky 200 and Kodak Gold 200 within 2 %. Kodak Gold is 
 At 3600 and 7200 dpi Plustek's standard timing sets the GL843's LINESEL to 1 and 2: after every
 real CCD line the sensor clocks out 1 or 2 unused "dummy" lines. The datasheet gives their purpose
 only as resolving the "start/stop (discontinuous) problem", that is restarts after the scanner's
-buffer fills. OpenOptic drops them by default, as SANE does:
+buffer fills. OpenOptic drops them by default at 1440 and 3600 dpi, as SANE does:
 
 | Setting | 3600 dpi | 7200 dpi | Data rate needed |
 |---|---|---|---|
-| None (default) | 40 s (0) | 79 s (0) | 5.49 / 10.98 MB/s |
+| None (default) | 40 s (0) | not available | 5.49 MB/s |
 | One fewer | 40 s (0) | 2 min 38 s (1) | 5.49 / 5.49 MB/s |
 | Standard (Plustek timing) | 79 s (1 dummy line) | 3 min 57 s (2) | 2.75 / 3.66 MB/s |
+
+At 7200 dpi, **None** can't be selected: without dummy lines the scanner would send 10.98 MB/s,
+more than the helper sustains, so the buffer fills and the scanner backtracks instead of
+finishing. Choosing 7200 dpi switches a **None** setting to **Standard**. Line doubling → off
+doesn't help, because the data rate per line is the same.
 
 Only the main scan changes. LINESEL is written in its start write, and the motor tables' cruise
 period is scaled by the same factor (14000 to 7000 at 3600 dpi; 42000 to 28000 or 14000 at 7200
