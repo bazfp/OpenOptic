@@ -103,7 +103,7 @@
   function prepareProfile(profile, options={}) {
     const pixelSampling=options.pixelSampling??'deletion';
     const exposureMultiplier=Number(options.exposureMultiplier??1);
-    const dummyLines=options.dummyLines??'recorded';
+    const dummyLines=options.dummyLines??'recorded', singleSampling=options.singleSampling===true;
     const invalid=message=>{const e=new Error(message);e.name='ScanConfigurationError';throw e;};
     if(!['deletion','average'].includes(pixelSampling)) invalid('Unknown sensor pixel sampling mode.');
     if(![1,2,3,4].includes(exposureMultiplier)) invalid('Choose an exposure of 1×, 2×, 3× or 4×.');
@@ -112,7 +112,7 @@
     const recordedLines=profile.scan?profile.scan.lineSel:0;
     // A longer exposure is a longer line period without dummy lines (as SilverFast's 3× pass).
     const lineSel=exposureMultiplier>1?0:dummyLines==='none'?0:dummyLines==='fewer'?Math.max(0,recordedLines-1):recordedLines;
-    if(pixelSampling==='deletion'&&lineSel===recordedLines&&exposureMultiplier===1) return profile; // Default wire sequence is unchanged.
+    if(pixelSampling==='deletion'&&lineSel===recordedLines&&exposureMultiplier===1&&!singleSampling) return profile; // Default wire sequence is unchanged.
     let out={...profile,frames:profile.frames.map(f=>({...f,regs:{...f.regs}}))};
     if(pixelSampling==='average'){
       out.ops=out.ops.map(op=>{
@@ -123,8 +123,8 @@
       });
       out.frames.forEach(f=>{f.regs[3]|=0x40;});
     }
-    if(lineSel!==recordedLines||exposureMultiplier>1) out=withLineSel(out,recordedLines,lineSel,exposureMultiplier);
-    out.acquisitionOptions={pixelSampling,exposureMultiplier,averagingReducesPixels:pixelSampling==='average'&&profile.dpi<7200,
+    if(lineSel!==recordedLines||exposureMultiplier>1||singleSampling) out=withLineSel(out,recordedLines,lineSel,exposureMultiplier,singleSampling);
+    out.acquisitionOptions={pixelSampling,exposureMultiplier,singleSampling,averagingReducesPixels:pixelSampling==='average'&&profile.dpi<7200,
       dummyLines:{setting:dummyLines,recorded:recordedLines,used:lineSel},exposure:exposureMultiplier>1?{multiplier:exposureMultiplier,lPeriod:out.scan.lPeriod,bufsel:0x08,note:'line period ×k, no dummy lines, motor cruise scaled; calibration at 1× (as SilverFast)'}:null,
       calibration:'recorded vendor AFE and shading'};
     return out;
@@ -141,7 +141,7 @@
   // Exposure ×k (k > 1): the main scan's line period becomes LPERIOD·k with no dummy lines and BUFSEL
   // (0x20, buffer restart level) 0x08, all written in the start write; cruise C becomes C·k/(L+1).
   // This reproduces SilverFast's 3× pass (LPERIOD 42000, LINESEL 0, cruise 21000, BUFSEL 0x08).
-  function withLineSel(profile,recorded,lineSel,k=1){
+  function withLineSel(profile,recorded,lineSel,k=1,singleSampling=false){
     const ops=profile.ops, main=profile.mainFrame, factor=k*(lineSel+1)/(recorded+1);   // line time and cruise scale
     const firstMainRead=ops.findIndex(o=>o.kind==='read'&&o.frame===main);
     let startOp=-1;
@@ -158,8 +158,8 @@
     assert(tables.length>=1,'profile has no main-scan motor table');
     const decode=d=>{ const b=bytes64(d), t=[]; for(let i=0;i+1<b.length;i+=2) t.push(b[i]|(b[i+1]<<8)); return t; };
     const encode=t=>{ let bin=''; for(const v of t) bin+=String.fromCharCode(v&0xff,v>>8); return btoa(bin); };
-    const cruise=decode(ops[tables[0]].data).at(-1), next=Math.round(cruise*factor);
-    assert(Number.isInteger(cruise*factor)&&next>0&&next<=0xffff,'dummy line change does not give a whole motor period');
+    const cruise=decode(ops[tables[0]].data).at(-1), next=Math.round(cruise*factor/(singleSampling?2:1));
+    assert(Number.isInteger(cruise*factor/(singleSampling?2:1))&&next>0&&next<=0xffff,'dummy line change does not give a whole motor period');
     const lineReg=profile.frames[main].regs[0x1e];
     assert(lineReg!==undefined&&(lineReg&0x0f)===recorded,'recorded main-scan LINESEL not found');
     const newOps=ops.slice();
@@ -168,12 +168,28 @@
     const lineVal=(lineReg&0xf0)|lineSel, lp=profile.scan.lPeriod*k, extra=[0x1e,lineVal];
     assert(Number.isInteger(lp)&&lp<=0xffff,'line period out of range');
     if(k>1) extra.push(0x38,lp>>8,0x39,lp&0xff,0x20,0x08);
-    newOps[startOp]={...ops[startOp],data:insertBeforeStart(ops[startOp].data,extra)};
     const regs=k>1?{[0x1e]:lineVal,[0x38]:lp>>8,[0x39]:lp&0xff,[0x20]:0x08}:{[0x1e]:lineVal};
-    const frames=profile.frames.map((f,i)=>i===main?{...f,regs:{...f.regs,...regs}}:f);
+    let lines=profile.frames[main].lines, size=profile.frames[main].bytes;
+    if(singleSampling){
+      assert(profile.yres===profile.dpi*2,'Single sampling requires a double-sampled profile');
+      lines=Math.floor(lines/2); size=profile.frames[main].pixels*lines*6;
+      const lincnt=lines*2;
+      Object.assign(regs,{[0x25]:lincnt>>16,[0x26]:(lincnt>>8)&255,[0x27]:lincnt&255});
+      extra.push(0x25,regs[0x25],0x26,regs[0x26],0x27,regs[0x27]);
+      assert(ops[firstMainRead].length===profile.frames[main].bytes,'Single sampling requires one main transfer');
+      newOps[firstMainRead]={...ops[firstMainRead],length:size};
+      let header=-1;
+      for(let i=firstMainRead-1;i>=0;i--)if(ops[i].kind==='control'&&ops[i].rt===0x40&&ops[i].value===0x82){header=i;break;}
+      assert(header>=0&&ops[header].data.length===8,'Missing main transfer header');
+      const data=ops[header].data.slice();for(let j=0;j<4;j++)data[4+j]=(size>>>(8*j))&255;
+      newOps[header]={...ops[header],data};
+    }
+    newOps[startOp]={...ops[startOp],data:insertBeforeStart(ops[startOp].data,extra)};
+    const frames=profile.frames.map((f,i)=>i===main?{...f,lines,bytes:size,regs:{...f.regs,...regs}}:f);
     const scan={...profile.scan,lineSel,lPeriod:lp,lineSeconds:+(profile.scan.lineSeconds*factor).toFixed(6),
-      seconds:+(profile.scan.seconds*factor).toFixed(1),bytesPerSecond:Math.round(profile.scan.bytesPerSecond/factor)};
-    return {...profile,ops:newOps,frames,scan,motorCruise:{recorded:cruise,used:next}};
+      seconds:+(profile.scan.seconds*factor*lines/profile.frames[main].lines).toFixed(1),bytesPerSecond:Math.round(profile.scan.bytesPerSecond/factor)};
+    return {...profile,ops:newOps,frames,scan,yres:singleSampling?profile.yres/2:profile.yres,
+      shifts:singleSampling?profile.shifts.map(v=>v/2):profile.shifts,motorCruise:{recorded:cruise,used:next}};
   }
   function insertBeforeStart(data,extra){
     const out=[]; for(let j=0;j<data.length;j+=2){ if(data[j]===0x0f) out.push(...extra); out.push(data[j],data[j+1]); } return out;

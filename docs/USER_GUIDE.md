@@ -221,7 +221,7 @@ Dmax = `log10(hi/lo)` and an offset from `lo`. Measuring Dmin from the film base
 | Sensor pixels | **Deletion** (default) or **averaging** (experimental; combines neighbouring sensor pixels at 1440 and 3600 dpi). |
 | LED warm-up | Seconds to wait after switching the LED on (default 1). |
 | Keep the LED on | Keeps the LED lit between frames, switching off after 15 minutes idle. |
-| Line doubling | How the scanner's double line rate becomes square pixels: **Lanczos-3** (default, sharpest), **average line pairs** or **keep all lines** (2× height). See [Image processing](#image-processing). |
+| Line doubling | How the scanner's double line rate becomes square pixels: **Lanczos-3** (default, sharpest), **average line pairs**, **keep all lines** (2× height) or **off** (single sampling: one line per output row, about half the scan time). See [Image processing](#image-processing). |
 | Dummy lines | **None** (default, fastest), **one fewer**, or **standard (Plustek timing)**, which is twice as slow. See [Scan speed and dummy lines](#scan-speed-and-dummy-lines). |
 | Front button A / B | What each front button does. |
 
@@ -319,6 +319,10 @@ far per line as the sensor's column spacing).
 - **Average line pairs**: each output row is the mean of two raw lines, after linear-interpolated
   colour alignment.
 - **Keep all lines**: every line, with separate X/Y dpi tags; most software displays it stretched.
+- **Off** (single sampling): the scanner reads one line per output row at the selected dpi. The
+  main transfer's row count is halved and the motor cruise speed doubled; calibration and the TIFF
+  dpi stay the same. About half the scan time and data, with no vertical oversampling. Colour
+  alignment uses linear interpolation. Not verified on hardware.
 
 Recorded under `processing.verticalAveraging` and `processing.interpolation`, and per TIFF as
 `lineFilter`.

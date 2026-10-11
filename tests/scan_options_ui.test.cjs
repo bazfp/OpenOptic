@@ -23,8 +23,12 @@ const guards=html.slice(html.indexOf('function enableScan()'),html.indexOf("asyn
   await vm.runInContext("guard(()=>acquire('prescan'))()",context);
   assert.equal(prepared.acquisitionOptions.pixelSampling,'average');
   assert(prepared.frames[prepared.mainFrame].regs[3]&0x40);
+  context.settings.pixels='off';context.settings.singleSampling=true;   // as fromUI derives it
+  await vm.runInContext("guard(()=>acquire('prescan'))()",context);
+  assert.equal(prepared.yres,prepared.dpi,'line doubling off reaches acquisition');
+  assert.equal(prepared.acquisitionOptions.singleSampling,true);
   context.operationActive=true;vm.runInContext('enableScan()',context);
-  assert(elements.get('pixelSampling').disabled&&elements.get('multiExposure').disabled&&elements.get('infrared').disabled);
+  assert(elements.get('pixelSampling').disabled&&elements.get('multiExposure').disabled&&elements.get('infrared').disabled&&elements.get('pixels').disabled);
   context.operationActive=false;vm.runInContext('enableScan()',context);
   assert(!elements.get('pixelSampling').disabled&&!elements.get('multiExposure').disabled&&!elements.get('infrared').disabled);
   console.log('Page acquisition/guard: invalid exposure touches no hardware; averaging reaches runtime; controls lock/unlock');

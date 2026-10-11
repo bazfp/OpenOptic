@@ -199,8 +199,8 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
       <label class="check"><input type="checkbox" id="saveJpeg"> also save a preview JPEG</label>
       <div class="field"><label for="lampCheck">Illumination check</label>
         <select id="lampCheck"><option value="warn">warn (recommended)</option><option value="wait">wait and retry</option><option value="off">off</option></select></div>
-      <span>Automatic dark and shading calibration</span>
-      <div class="note"><b class="lead">TIFFs hold the scanner’s linear 16-bit data — not inverted or colour balanced, ready for a negative converter.</b><ul><li><b>Black-level correction</b> uses the dark calibration frame. Keep it on.</li><li><b>Film type</b> only changes the preview; <b>orientation</b> is stored as a TIFF tag.</li></ul><span class="foot">This includes both multi-exposure modes and infrared repair.</span></div>
+      <div class="field"><label>Calibration</label><span>automatic, every scan</span></div>
+      <div class="note"><b class="lead">TIFFs hold the scanner’s linear 16-bit data — not inverted or colour balanced, ready for a negative converter.</b><ul><li><b>Calibration</b> — each scan measures analogue gain and offsets, then per-column dark and white shading, which the scanner applies before sending the image. No separate black level is subtracted.</li><li><b>Film type</b> only changes the preview; <b>orientation</b> is stored as a TIFF tag.</li></ul><span class="foot">This includes both multi-exposure modes and infrared repair.</span></div>
     </details>
   </section>
 
@@ -213,8 +213,8 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
       <div class="note"><b class="lead">Only applies when the LED has been off.</b></div>
       <label class="check"><input type="checkbox" id="keepLamp"> keep the LED on between frames (off after 15 min idle)</label>
       <div class="field"><label for="pixels">Line doubling</label>
-        <select id="pixels"><option value="lanczos">Lanczos-3 (default)</option><option value="square">average line pairs</option><option value="full">keep all lines (2× height)</option></select></div>
-      <div class="note"><b class="lead">The scanner reads twice as many lines as columns; this turns them into square pixels.</b><ul><li><b>Lanczos-3</b> (default) — sharpest, least grain aliasing, ~1–3 s extra. A faint halo is possible on very hard edges.</li><li><b>Average line pairs</b> — simple, slightly softer.</li><li><b>Keep all lines</b> — 2× height with separate X/Y dpi; most programs show it stretched.</li></ul></div>
+        <select id="pixels"><option value="lanczos">Lanczos-3 (default)</option><option value="square">average line pairs</option><option value="full">keep all lines (2× height)</option><option value="off">off (single sampling)</option></select></div>
+      <div class="note"><b class="lead">The scanner reads twice as many lines as columns; this turns them into square pixels.</b><ul><li><b>Lanczos-3</b> (default) — sharpest, least grain aliasing, ~1–3 s extra. A faint halo is possible on very hard edges.</li><li><b>Average line pairs</b> — simple, slightly softer.</li><li><b>Keep all lines</b> — 2× height with separate X/Y dpi; most programs show it stretched.</li><li><b>Off</b> — the scanner reads one line per output row at the selected dpi, with the carriage moving twice as fast: about half the scan time and data, but no vertical oversampling. Not verified on hardware.</li></ul></div>
       <div class="field"><label for="dummyLines">Dummy lines</label>
         <select id="dummyLines"><option value="none">none (default)</option><option value="fewer">one fewer</option><option value="recorded">standard (Plustek timing)</option></select></div>
       <div class="note" id="dummyNote"><b class="lead">None (default) halves the scan time: 3600 dpi in ~40 s instead of 80 s.</b><ul><li>Skips the unused CCD lines Plustek inserts (1 at 3600 dpi, 2 at 7200), as SANE does and as SilverFast does for its long pass.</li><li>Same image size and exposure; vertical detail is slightly softer than Plustek timing.</li></ul></div>
@@ -690,6 +690,7 @@ let settings={...defaults}, records=[], pending=null, selected=null, rescan=null
 try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s){ settings={...defaults,...s.settings}; records=s.records||[]; if(!s.v&&settings.warm===20) settings.warm=1; if((s.v||0)<3&&settings.dummyLines==='recorded') settings.dummyLines='none'; delete settings.exposureMultiplier; if((s.v||0)<4&&settings.pixels==='square') settings.pixels='lanczos';
     // an untouched old default (Roll001_ in …/Roll001, or Roll_ in …/Roll) with no frames moves to today's dated roll
     if((s.v||0)<6&&!records.length&&[['Roll001_','Roll001'],['Roll_','Roll']].some(([p,f])=>settings.prefix===p&&(!window.NATIVE_USB?.defaultDir||settings.dir===window.NATIVE_USB.defaultDir+sep+f))){ settings.prefix=defaults.prefix; settings.dir=defaults.dir; } } }catch(e){}   // 20 s was the old default
+settings.singleSampling=settings.pixels==='off';   // only Line doubling → off selects it
 function persist(){ if(dry) return; try{ localStorage.setItem(KEY,JSON.stringify({v:6,settings,records:records.map(({large,repairMask,previewFailed,...r})=>r)})); }catch(e){ log('w','could not remember the roll list in this browser: '+e.message); } }
 // sidebar notes: hidden behind an (i) beside the control they describe
 for(const p of document.querySelectorAll('aside .note')){
@@ -704,6 +705,7 @@ const bind=[['outDir','dir','text'],['prefix','prefix','text'],['nextNo','next',
   ['tiffKind','tiff','text'],['pixels','pixels','text'],['profileSel','profile','text'],['saveJpeg','jpeg','check'],['mirror','mirror','check'],['warm','warm','int'],['keepLamp','keepLamp','check'],['lampCheck','lampCheck','text'],['pixelSampling','pixelSampling','text'],['multiExposure','multiExposure','text'],['meFactor','meFactor','text'],['infrared','infrared','text'],['dummyLines','dummyLines','text'],['btn3','btn3','text'],['btn2','btn2','text']];
 function toUI(){ for(const [id,k,t] of bind){ if(t==='check') $(id).checked=!!settings[k]; else $(id).value=settings[k]; } refreshName(); }
 function fromUI(){ for(const [id,k,t] of bind){ settings[k]=t==='check'?$(id).checked:t==='int'?parseInt($(id).value||'0',10):$(id).value.trim(); }
+  settings.singleSampling=settings.pixels==='off';
   const clean=Roll.cleanPrefix(settings.prefix); if(clean!==settings.prefix){ settings.prefix=clean; $('prefix').value=clean; } persist(); refreshName(); }
 function refreshName(){
   let t; try{ t=Roll.fileNames(settings,settings.next).map(f=>f.name).join('  '); }catch(e){ t='—'; }
@@ -713,8 +715,8 @@ function refreshName(){
     o.title=ps.map(([n,t])=>`${n} ~${fmtSecs(t)}`).join(' + '); }
   $('meFactor').closest('.field').hidden=settings.multiExposure==='off';   // only the second pass's exposure
   $('profileSel').title=($('profileSel').selectedOptions[0]?.title||'')+'\n'+(DPI_INFO[settings.profile]||'');
-  const base=passSecs('full',{dummyLines:settings.dummyLines});
-  for(const o of $('meFactor').options){ const k=Number(o.value); o.textContent=`${k}×${k===3?' (SilverFast)':''} · +${fmtSecs(passSecs('full',{dummyLines:settings.dummyLines,exposureMultiplier:k})+15)}`; }
+  const base=passSecs('full',{dummyLines:settings.dummyLines,singleSampling:settings.singleSampling});
+  for(const o of $('meFactor').options){ const k=Number(o.value); o.textContent=`${k}×${k===3?' (SilverFast)':''} · +${fmtSecs(passSecs('full',{dummyLines:settings.dummyLines,singleSampling:settings.singleSampling,exposureMultiplier:k})+15)}`; }
 }
 const DPI_LABEL={prescan:'1440 dpi',full:'3600 dpi',full7200:'7200 dpi'}, DPI_MB={prescan:'~16 MB',full:'~103 MB',full7200:'~411 MB'};
 const fmtSecs=s=>s>=100?`${Math.floor(s/60)} min${s%60>=15?' '+Math.round(s%60)+' s':''}`:`${Math.round(s)} s`;
@@ -722,7 +724,7 @@ const fmtSecs=s=>s>=100?`${Math.floor(s/60)} min${s%60>=15?' '+Math.round(s%60)+
 const passSecs=(key,o)=>{ try{ return CaptureRuntime.prepareProfile(CAPTURE_PROFILES[key],o).scan.seconds; }catch(e){ return CAPTURE_PROFILES[key].scan.seconds; } };
 const extraPasses=key=>key==='full'?{me:settings.multiExposure!=='off',ir:settings.infrared!=='off'}:{me:false,ir:false};
 // per pass: main-scan time; each extra pass adds ~15 s of return, recalibration and positioning
-const scanPasses=key=>{ const x=extraPasses(key), d={dummyLines:settings.dummyLines}, k=Number(settings.meFactor)||3, list=[['colour',passSecs(key,d)]];
+const scanPasses=key=>{ const x=extraPasses(key), d={dummyLines:settings.dummyLines,singleSampling:settings.singleSampling}, k=Number(settings.meFactor)||3, list=[['colour',passSecs(key,d)]];
   if(x.ir) list.push(['infrared',passSecs('full-ir',d)+15]);
   if(x.me) list.push([`${k}× exposure`,passSecs(key,{...d,exposureMultiplier:k})+15]);
   return list; };
@@ -1135,7 +1137,7 @@ $('pkNative').onclick=async()=>{
 };
 
 // ---------------------------------------------------------------- buttons, keys, guard
-function enableScan(){ ['pixelSampling','multiExposure','meFactor','infrared','dummyLines'].forEach(id=>$(id).disabled=operationActive||!!pending); const ok=(connected||dry)&&!pending&&!operationActive; $('bScan').disabled=(connected||dry)?!ok:operationActive; $('bPreview').disabled=!ok; ['bHome','bLamp','bReconnect','bMonitor'].forEach(i=>$(i).disabled=!connected||operationActive); $('bTrace').disabled=!(connected&&trace.length>traceMark); $('bStop').disabled=!connected; }
+function enableScan(){ ['pixelSampling','multiExposure','meFactor','infrared','dummyLines','pixels'].forEach(id=>$(id).disabled=operationActive||!!pending); const ok=(connected||dry)&&!pending&&!operationActive; $('bScan').disabled=(connected||dry)?!ok:operationActive; $('bPreview').disabled=!ok; ['bHome','bLamp','bReconnect','bMonitor'].forEach(i=>$(i).disabled=!connected||operationActive); $('bTrace').disabled=!(connected&&trace.length>traceMark); $('bStop').disabled=!connected; }
 function guard(fn){ return async()=>{ if(operationActive) return; operationActive=true; cancelFlag=false; enableScan(); $('bStop').disabled=!(connected||dry);
   try{ if(gpioPoll.busy) await gpioPoll.busy.catch(()=>{}); await fn(); }
   catch(e){ if(e instanceof Cancelled){ log('w','stopped'); say('Stopped. The carriage has been parked.'); try{ cancelFlag=false; await stopMotor(); await home(); }catch(_){} }

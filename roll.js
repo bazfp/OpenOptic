@@ -59,7 +59,7 @@
   async function processPasses(p,acq,log,report){
     const s=p.settings, average=s.pixels!=='full', filter=s.pixels==='lanczos'?'lanczos3':'box', mirror=s.mirror!==false;
     const keepRaw=p.names.some(n=>n.kind==='raw-tiff');
-    const alignPass=(bytes,profile,inPlace)=>CaptureRuntime.alignedFrame(bytes,CaptureRuntime.geometry(profile,p.align.shifts),{average,inPlace,mirror,filter});
+    const alignPass=(bytes,profile,inPlace)=>CaptureRuntime.alignedFrame(bytes,CaptureRuntime.geometry(profile,p.align.shifts),{average,inPlace:inPlace&&profile.yres>=profile.dpi*2,mirror,filter});
     const a=alignPass(p.bytes,p.profile,!keepRaw&&average), W=a.width, H=a.height;
     const rgb=new Uint16Array(a.data.buffer,a.data.byteOffset,a.data.byteLength>>1);
     const darkS=p.lamp?.dark?.mean||[1000,1000,1000];
@@ -150,7 +150,7 @@
         if(kind==='tiff'){
           // convert once (a retry reuses it): with no raw-TIFF output and averaged pixels the
           // conversion may reuse the source buffer, halving peak memory on large scans
-          const average=settings.pixels!=='full', inPlace=average&&!pending.names.some(n=>n.kind==='raw-tiff');
+          const average=settings.pixels!=='full', inPlace=average&&g.yMul>=2&&!pending.names.some(n=>n.kind==='raw-tiff');
           let a=pending.aligned||(pending.aligned=CaptureRuntime.alignedFrame(bytes,g,{average,offsets:pending.offsets,inPlace,mirror:settings.mirror!==false,filter:settings.pixels==='lanczos'?'lanczos3':'box'}));
           const note=pending.processing?.multiExposure?` multi-exposure ${pending.processing.multiExposure.mode}${pending.processing.multiExposure.fusion?' (exposure-fused negative)':''}`:'';
           // with infrared, the registered IR plane is the 4th sample of every pixel (RGBI, ExtraSamples
@@ -194,13 +194,13 @@
         illuminationCheck:p.lamp?{...p.lamp,reference:profile.lamp,limits:CaptureRuntime.LAMP_LIMITS}:null,
         hardwareShading:(p.calibrated?'live':'recorded vendor')+' shading tables applied by the scanner before USB transfer'},
       processing:{multiExposure:p.processing?.multiExposure||null,infrared:p.processing?.infrared?{...p.processing.infrared,overlay:p.repairMask?{...p.repairMask,note:`${p.repairMask.mode==='repair'?'repaired':'detected'} defects at preview size (orientation as stored, before the TIFF orientation tag); 8-bit PNG, 255 = defect`}:null}:null,channelShiftLines:align.shifts,channelShiftSource:align.used,channelShiftConfidence:align.confidence,
-        recordedChannelShifts:profile.shifts,interpolation:settings.pixels==='lanczos'?'Lanczos-3 kernel (alignment and line reduction in one resample)':'linear between bracketing lines',
+        recordedChannelShifts:profile.shifts,interpolation:settings.pixels==='lanczos'&&g.yMul>=2?'Lanczos-3 kernel (alignment and line reduction in one resample)':'linear between bracketing lines',
         columnStagger:{rawLineOffsets:g.stagger||[],
           order:'native even/odd columns, before orientation',
           appliedTo:'aligned TIFF and preview; raw USB TIFF unchanged',
           extraRawLinesTrimmed:g.stagger?.length?Math.max(...g.stagger):0},
         horizontalMirror:settings.mirror!==false?{applied:true,appliedTo:'aligned TIFF and preview; raw USB TIFF unchanged',order:'after channel alignment and column stagger, before the TIFF orientation tag'}:{applied:false},
-        verticalAveraging:settings.pixels==='full'?'none':settings.pixels==='lanczos'?`Lanczos-3 resampling, ${Math.round(g.yres/g.dpi)}:1, combined with channel alignment (12 taps per channel)`:`${Math.round(g.yres/g.dpi)} lines averaged per output row`,
+        verticalAveraging:g.yMul<2?'none (single vertical sampling, 1:1)':settings.pixels==='full'?'none':settings.pixels==='lanczos'?`Lanczos-3 resampling, ${Math.round(g.yres/g.dpi)}:1, combined with channel alignment (12 taps per channel)`:`${Math.round(g.yres/g.dpi)} lines averaged per output row`,
         blackLevelCorrection:p.offsets?{counts:p.offsets,note:'per-channel dark-frame difference from the recorded AFE offset calibration, subtracted from the image'}:null,
         inversion:false,levels:false,gamma:false,
         note:'TIFF values are the scanner\'s linear 16-bit output: not inverted, not colour balanced. Preview inversion applies to the on-screen image and preview JPEG only.'}};
