@@ -164,7 +164,10 @@ the 7600i. Every chip has its own register map, and every model has its own sens
 motor, so each needs its own validated profiles.
 
 Each scan measures fresh analogue gains, offsets and dark/white shading from its calibration
-reads, including infrared. The calculations match all eight reference captures.
+reads, including infrared. After the white reference, colour gain and shading targets are
+recalculated from the measured response using the recovered A28 vendor post-gain settings,
+including compensation for the hardware's discrete gain steps. Infrared retains its measured
+gain. This uses the ordinary A28 configuration; alternate firmware settings remain unvalidated.
 
 **The 8200i and the GL845.** The OpticFilm 8200i is built on the **GL845**, the same chip as the
 later 7600i (the 8200i SE is built on the newer **GL128** instead). The GL845 is a close

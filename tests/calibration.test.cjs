@@ -31,15 +31,42 @@ function fixture(ir){
     const values=controls.filter(d=>d[0]===0x51).map(d=>[d[1],d[3]*256+d[5]]);
     assert.deepEqual(values.slice(0,3),[[5,348],[6,288],[7,268]]);
     assert.deepEqual(values.slice(3,6),[[2,17],[3,29],[4,40]]);
-    assert.deepEqual(values.slice(-3),[[2,17],[3,ir?29:30],[4,ir?40:42]]);
+    assert.deepEqual(values.slice(-3),[[2,ir?17:18],[3,ir?29:30],[4,ir?40:42]]);
     assert.deepEqual(values.slice(9,12).map(v=>v[1]),ir?[348,288,8]:[336,276,20]);
     assert.deepEqual(values.slice(12,15).map(v=>v[1]),ir?[328,268,28]:[334,274,22]);
     const words=i=>{const b=Buffer.concat(writes.slice(i,i+2));return new DataView(b.buffer,b.byteOffset,b.byteLength);};
     const first=words(0),final=words(2),six=v=>Array.from({length:6},(_,i)=>v.getUint16(i*2,true));
     assert.deepEqual(six(first),[1000,8192,1045,8192,1000,8192]);
-    assert.deepEqual(six(final),ir?[1000,12750,1045,12750,1000,12750]:[1000,13005,1045,12962,1000,13555]);
+    assert.deepEqual(six(final),ir?[1000,12750,1045,12750,1000,12750]:[1000,12750,1045,12962,1000,13421]);
     assert.deepEqual([0,4,8].map(at=>final.getUint16(512+at,true)),[1000,2000,1000]);
     for(const at of [504,506,508,510,1016,1018,1020,1022])assert.equal(final.getUint16(at,true),0);
+  }
+  // Vendor type-1 witnesses: saved profiles, low gain, and saturated post gain.
+  // Assert both the programmed main codes and the resulting shading words.
+  for(const [before,after,targets] of [
+    [[35,25,33],[35,26,35],[79380,79119,82739]],
+    [[35,26,32],[35,27,34],[79380,79119,82739]],
+    [[17,29,40],[18,30,42],[77824,79119,81920]],
+    [[0,0,0],[1,2,4],[78602,78336,81920]],
+    [[63,63,63],[63,63,63],[79380,80686,86835]],
+  ]){
+    const {p,data}=fixture(false),c=new CaptureRuntime.Calibration(p);
+    c.gain=before.slice();c.frameDone(5,data[5]);
+    c.phase=5;
+    const codes=()=>[2,3,4].map(a=>{const d=c.control(afe(a)).data;return d[3]*256+d[5];});
+    assert.deepEqual(codes(),before); // Reference acquisitions retain measured gain.
+    c.frameDone(6,data[6]);assert.deepEqual(codes(),after);
+    assert.deepEqual(c.gain,before); // Keep the reference gain separate.
+    const v=new DataView(c.table.buffer);
+    assert.deepEqual([2,6,10].map(at=>v.getUint16(at,true)),targets.map(t=>Math.floor(t*8192/50000)));
+  }
+  // PostGain=100 must preserve every IR code, including quantization boundaries.
+  for(let code=0;code<=63;code++){
+    const {p,data}=fixture(true),c=new CaptureRuntime.Calibration(p);
+    c.gain=[code,code,code];c.frameDone(5,data[5]);c.frameDone(6,data[6]);
+    assert.deepEqual(c.mainGain,c.gain);
+    const v=new DataView(c.table.buffer);
+    assert.deepEqual([2,6,10].map(at=>v.getUint16(at,true)),[12750,12750,12750]);
   }
   const {p,data}=fixture(false),c=new CaptureRuntime.Calibration(p);
   c.frameDone(0,data[0]);assert.throws(()=>c.frameDone(1,data[0]),/Nonpositive/);

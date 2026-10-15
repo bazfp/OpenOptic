@@ -666,9 +666,15 @@ Acknowledgements, bulk completion, data readiness and terminal motor status can 
 **Live calibration:** normal acquisition replaces recorded AFE and shading values with measurements
 from the existing probe reads. Initial gain uses the maximum four-pixel integer mean; offsets use
 32 black pixels. Dark/white references trim eight samples from each end of 128 lines. Dark smoothing
-uses a forward 100-value mean, separately by parity at 7200 dpi. All eight supplied colour/IR
-captures match. The inclusive dark outlier threshold 64 fits them but remains uncertain within
-63..67. Final colour gain increments remain 0/+1/+2.
+uses a backwards 100-value mean, separately by parity at 7200 dpi. The source retains an inclusive
+dark outlier threshold 64; later REA established vendor strict `<64` as a remaining difference.
+Final colour gain and shading targets now follow the recovered ordinary A28 type-1 post-gain
+normalization: request 102/103/106 percent of measured RGB gain, quantize the new AFE codes,
+then compensate base shading targets 77824/78336/81920 for the actual analogue gain achieved.
+IR uses 100 percent and target 77824, preserving its measured gains. Fixed RGB increments
+0/+1/+2 and final targets were valid for the saved profiles but are no longer hardcoded.
+Regression coverage checks saved profiles, low gain, saturation, and all IR reference codes;
+this update does not establish new hardware parity or select alternate firmware defaults.
 Exact recorded replay remains available by omitting `hooks.calibrate` from `CaptureRuntime.run`.
 
 ## Reconstruction changes

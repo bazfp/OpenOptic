@@ -76,8 +76,19 @@
         }
         this.table=this.pack(8192);
       }else if(i===this.white){
-        const white=this.reference(data), target=this.ir?[77824,77824,77824]:[79380,79119,82739];
+        const white=this.reference(data), target=this.ir?[77824,77824,77824]:[77824,78336,81920];
         assert(white.every(a=>a>0),'Zero white reference during shading calibration');
+        // A28 type-1 AFE: quantize PostGain, then compensate the shading target
+        // for the analogue gain actually achieved (ordinary Positive/PositiveIR).
+        const realized=code=>6/(6-5*code/63), post=this.ir?[100,100,100]:[102,103,106];
+        this.mainGain=this.gain.map((code,c)=>{
+          if(post[c]===100)return code;
+          const before=realized(code), requested=before*post[c]/100;
+          const after=Math.max(0,Math.min(63,Math.trunc(75.6-75.6/requested)));
+          const percent=Math.trunc(post[c]*before/realized(after)+0.5);
+          target[c]=Math.floor(target[c]*percent/100);
+          return after;
+        });
         this.table=this.pack(white.map((a,s)=>Math.min(65535,Math.floor(target[s%3]*8192/a)))); // already dark-corrected
       }
       this.at=0;
@@ -85,7 +96,7 @@
     control(op){
       if(op.rt!==0x40||op.value!==0x83||op.data[0]!==0x51)return op;
       const data=op.data.slice(), addr=data[1]; let value;
-      if(addr>=2&&addr<=4&&this.phase>=2){const c=addr-2;value=Math.min(63,this.gain[c]+(this.phase>=6&&!this.ir?c:0));}
+      if(addr>=2&&addr<=4&&this.phase>=2){const c=addr-2;value=(this.phase>=6?this.mainGain:this.gain)[c];}
       else if(addr>=5&&addr<=7){const c=addr-5;let offset;
         if(this.phase===1)offset=this.zeroLow[c];
         else if(this.phase===4)offset=(this.offsetWrites[c]++===0?this.zeroHigh:this.darkOffset)[c];
