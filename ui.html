@@ -1149,9 +1149,8 @@ function enableScan(){ ['pixelSampling','multiExposure','meFactor','infrared','d
 function guard(fn){ return async()=>{ if(operationActive) return; operationActive=true; cancelFlag=false; enableScan(); $('bStop').disabled=!(connected||dry);
   try{ if(gpioPoll.busy) await gpioPoll.busy.catch(()=>{}); await fn(); }
   catch(e){ if(e instanceof Cancelled){ log('w','stopped'); say('Stopped. The carriage has been parked.'); try{ cancelFlag=false; await stopMotor(); await home(); }catch(_){} }
-    else { const slow=e.name==='ThroughputTooLow';
-      log('err',e.message);
-      say(slow?`Stopped: ${e.message}. Close other browser tabs and programs, or scan at a lower resolution.`:e.message,'err');
+    else { log('err',e.message);
+      say(e.message,'err');
       console.error(e); if(connected&&e.name!=='ScanConfigurationError'){ try{ await stopMotor(); }catch(_){} } } progress(0); }
   finally{ operationActive=false; enableScan(); } }; }
 async function connectScanner(){

@@ -385,7 +385,7 @@
         // The scanner delivers a line every (LINESEL+1) line periods and its buffer is small: if the
         // host falls behind, the scanner can enter buffer-full backtracking
         // (7200 dpi needs 3.7 MB/s). Keep one read in flight and
-        // use large transfers to cover the round-trip latency, and give up early if the rate is short.
+        // use large transfers to cover the round-trip latency, and warn once if the rate is short.
         const main=op.frame===profile.mainFrame, need=main&&profile.scan?profile.scan.bytesPerSecond:0;
         const chunk=hooks.readChunk||CHUNK;
         // Request whole 512-byte packets and read any remainder on its own, as the vendor driver
@@ -399,7 +399,7 @@
           r.catch(()=>{});   // awaited below; this only stops an early exit reporting it as unhandled
           return r;
         };
-        let pending=request(), started=0, sinceStart=0;
+        let pending=request(), started=0, sinceStart=0, warned=false;
         while(remaining){
           check();
           const {part,n}=await pending;
@@ -412,9 +412,9 @@
           state.got+=part.length;
           if(started){ sinceStart+=part.length;
             const secs=(now()-started)/1000;
-            if(need&&secs>THROUGHPUT_GRACE_S&&sinceStart/secs<need*THROUGHPUT_MIN){
-              const e=new Error(`the scan data is arriving at ${(sinceStart/secs/1e6).toFixed(2)} MB/s but this resolution needs ${(need/1e6).toFixed(2)} MB/s; stopping because the scanner may enter buffer-full backtracking`);
-              e.name='ThroughputTooLow'; e.achieved=sinceStart/secs; e.needed=need; throw e;
+            if(need&&!warned&&secs>THROUGHPUT_GRACE_S&&sinceStart/secs<need*THROUGHPUT_MIN){
+              warned=true;
+              if(hooks.log)hooks.log(`the scan data is arriving at ${(sinceStart/secs/1e6).toFixed(2)} MB/s but this resolution needs ${(need/1e6).toFixed(2)} MB/s; the scanner may enter buffer-full backtracking`);
             }
           } else started=now();
           if(hooks.progress)hooks.progress(op.frame,state.got,f.bytes,state.data);   // data: the frame so far (main and lamp frames)

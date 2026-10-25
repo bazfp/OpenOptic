@@ -106,7 +106,7 @@ require('../capture_profiles.js');require('../capture_runtime.js');
   const pf=CaptureRuntime.decode(bf,gf);
   assert.deepEqual([...pf[0]],[1000,2000]);assert.deepEqual([...pf[1]],[1500,2500]);assert.deepEqual([...pf[2]],[2250,3000]);
   // Transfer pacing: one read stays in flight, and a host too slow for the scanner's line rate is
-  // stopped when it cannot sustain the rate, risking buffer-full backtracking.
+  // warned once (not stopped) when it cannot sustain the rate, risking buffer-full backtracking.
   {const p=CAPTURE_PROFILES.prescan, need=p.scan.bytesPerSecond;
    const device=(rateFactor)=>{let clock=0,inFlight=0,maxInFlight=0,frame=-1,budget=0;
      return {clock:()=>clock,advance:ms=>{clock+=ms;},get maxInFlight(){return maxInFlight;},
@@ -120,11 +120,10 @@ require('../capture_profiles.js');require('../capture_runtime.js');
    await CaptureRuntime.run(p,fast,{sleep:async ms=>fast.advance(ms),now:()=>fast.clock(),readChunk:0x40000});
    assert(fast.maxInFlight>=1,'a read must be outstanding while the previous one is processed');
    const slow=device(0.5);
-   await assert.rejects(()=>CaptureRuntime.run(p,slow,{sleep:async ms=>slow.advance(ms),now:()=>slow.clock()}),
-     e=>e.name==='ThroughputTooLow'&&Math.abs(e.achieved-need*0.5)/need<0.1&&/buffer-full backtracking/.test(e.message));
-   const stoppedAfter=slow.clock()/1000;
-   assert(stoppedAfter<40,'must give up within seconds, not after the whole scan: '+stoppedAfter.toFixed(1)+' s');
-   console.log(`transfer pacing: required ${(need/1e6).toFixed(2)} MB/s; a host at half that is stopped ${stoppedAfter.toFixed(1)} s into the sequence`);
+   const warnings=[];
+   await CaptureRuntime.run(p,slow,{sleep:async ms=>slow.advance(ms),now:()=>slow.clock(),log:m=>{if(/buffer-full backtracking/.test(m))warnings.push(m);}});
+   assert.equal(warnings.length,1,'a slow host is warned once and the scan continues');
+   console.log(`transfer pacing: required ${(need/1e6).toFixed(2)} MB/s; a host at half that completes with one warning: ${warnings[0]}`);
    for(const [k,q] of Object.entries(CAPTURE_PROFILES))
      console.log(`  ${k.padEnd(9)} line ${(q.scan.lineSeconds*1000).toFixed(1)} ms (LINESEL ${q.scan.lineSel}) -> ${(q.scan.seconds).toFixed(0)} s, ${(q.scan.bytesPerSecond/1e6).toFixed(2)} MB/s`);}
 
