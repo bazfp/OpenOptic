@@ -41,7 +41,7 @@
     const offsets=!acq.calibrated&&settings.blackLevel&&lamp?.dark?lamp.dark.delta:null;
     const pending={number,base:baseName(settings.prefix,number,settings.digits),names,overwrite,
       settings:{...settings},started:started.toISOString(),bytes,profile,g,align,lamp:lamp||null,positioning:positioning||null,
-      calibrated:!!acq.calibrated,offsets,preview:null,trace:trace||null,saved:[]};
+      calibrated:!!acq.calibrated,calibrationNote:acq.calibrationNote||null,offsets,preview:null,trace:trace||null,saved:[]};
     let pv;
     if(acq.long||acq.ir){
       await processPasses(pending,acq,ctx.log||(()=>{}),ctx.progress);
@@ -143,7 +143,7 @@
       pending.saved.push({kind,name,bytes:r.bytes,sha256:r.sha256||null,...meta});done.add(name);
       log(`saved ${name} (${(r.bytes/1048576).toFixed(1)} MB)`);
     };
-    const desc=`${pending.base} OpticFilm 7600i ${profile.name}`;
+    const desc=`${pending.base} ${/^OpticFilm/.test(profile.name)?'':'OpticFilm 7600i '}${profile.name}`;
     try{
       for(const {kind,name} of pending.names){
         if(done.has(name))continue;
@@ -152,18 +152,23 @@
           // conversion may reuse the source buffer, halving peak memory on large scans
           const average=settings.pixels!=='full', inPlace=average&&g.yMul>=2&&!pending.names.some(n=>n.kind==='raw-tiff');
           let a=pending.aligned||(pending.aligned=CaptureRuntime.alignedFrame(bytes,g,{average,offsets:pending.offsets,inPlace,mirror:settings.mirror!==false,filter:settings.pixels==='lanczos'?'lanczos3':'box'}));
-          const note=pending.processing?.multiExposure?` multi-exposure ${pending.processing.multiExposure.mode}${pending.processing.multiExposure.fusion?' (exposure-fused negative)':''}`:'';
+          // "ready to view": tone the aligned data once (a retry reuses pending.aligned, so it is marked); fused output is already display-referred
+          if(settings.tone==='view'&&!a.displayReferred&&!a.toned){
+            const t=CaptureRuntime.toneView(new Uint16Array(a.data.buffer,a.data.byteOffset,a.data.byteLength>>1),a.width,a.height,settings.film);
+            if(typeof Adjust!=='undefined'&&!Adjust.isNeutral({brightness:settings.brightness,contrast:settings.contrast})){ const adj=Adjust.norm({brightness:settings.brightness,contrast:settings.contrast}); Adjust.apply16(new Uint16Array(a.data.buffer,a.data.byteOffset,a.data.byteLength>>1),adj); t.adjust=adj; }   // adjust add-on
+            pending.tone={mode:'view',...t,note:'linear data tone-mapped for viewing: per-channel levels at the 0.1/99.9 percentiles of non-saturated pixels, then '+(t.film==='pos'?'gamma 2.2':'density curve with gamma 1.4')+' (as the on-screen preview)'}; a.toned=true; }
+          const note=(pending.tone?' tone: ready to view;':'')+(pending.processing?.multiExposure?` multi-exposure ${pending.processing.multiExposure.mode}${pending.processing.multiExposure.fusion?' (exposure-fused negative)':''}`:'');
           // with infrared, the registered IR plane is the 4th sample of every pixel (RGBI, ExtraSamples
           // = unspecified), as in SilverFast's 64-bit HDRi files; the RGB data is unchanged
           const ir=pending.irPlane, ch=ir?4:3;
-          const h=CaptureRuntime.tiffHeader(a.width,a.height,a.xdpi,a.ydpi,{orientation:settings.orientation,channels:ch,description:desc+note+(pending.processing?.infrared?.repair?' infrared-repaired':'')+(ir?' RGBI: 4th channel infrared, registered to the colour image':'')});
+          const h=CaptureRuntime.tiffHeader(a.width,a.height,a.xdpi,a.ydpi,{orientation:settings.orientation,channels:ch,software:software8100(profile),description:desc+note+(pending.processing?.infrared?.repair?' infrared-repaired':'')+(ir?' RGBI: 4th channel infrared, registered to the colour image':'')});
           const meta={width:a.width,height:a.height,xDpi:a.xdpi,yDpi:a.ydpi,channels:ir?'RGBI':'RGB',verticalSamplesAveraged:a.averaged,lineFilter:a.filter};
           let body=a.data;
           if(ir){ const rgb=new Uint16Array(a.data.buffer,a.data.byteOffset,a.data.byteLength>>1), n=a.width*a.height, o=new Uint16Array(n*4);
             for(let i=0,j=0,k=0;i<n;i++,j+=3,k+=4){ o[k]=rgb[j]; o[k+1]=rgb[j+1]; o[k+2]=rgb[j+2]; o[k+3]=ir[i]; } body=new Uint8Array(o.buffer); }
           await put(kind,name,[h,body],meta);
         }else if(kind==='raw-tiff'){
-          const h=CaptureRuntime.tiffHeader(g.pixels,g.lincnt,g.dpi,g.yres,{orientation:1,description:desc+' raw USB samples, channels not aligned'});
+          const h=CaptureRuntime.tiffHeader(g.pixels,g.lincnt,g.dpi,g.yres,{orientation:1,software:software8100(profile),description:desc+' raw USB samples, channels not aligned'});
           await put(kind,name,[h,bytes],{width:g.pixels,height:g.lincnt,xDpi:g.dpi,yDpi:g.yres});
         }else if(kind==='jpeg'){
           const blob=await ctx.previewJpeg(pending.preview);
@@ -177,10 +182,11 @@
     return release(pending);
   }
 
+  const software8100=profile=>/^OpticFilm 8100/.test(profile.name)?'OpticFilm 8100 roll scanner':undefined;   // undefined keeps the 7600i default
   function sidecar(p){
     const {settings,g,profile,align}=p, f=profile.frames[profile.mainFrame];
     return {format:VERSION,frame:p.base,number:p.number,scanned:p.started,
-      device:'Plustek OpticFilm 7600i (07b3:0c3b, GL843, bcdDevice 4.00)',
+      device:/^OpticFilm 8100/.test(profile.name)?'Plustek OpticFilm 8100 (07b3:130c, GL845, bcdDevice 6.05)':'Plustek OpticFilm 7600i (07b3:0c3b, GL843, bcdDevice 4.00)',
       film:settings.film,orientation:{tiffTag:settings.orientation,meaning:ORIENTATIONS[settings.orientation]},
       files:p.saved.filter(s=>s.kind!=='sidecar'),
       acquisition:{profile:profile.name,sourceCapture:profile.source,sourceCaptureSha256:profile.sha256,
@@ -190,10 +196,10 @@
         scanTiming:profile.scan?{lineSel:profile.scan.lineSel,lineSeconds:profile.scan.lineSeconds,bytesPerSecond:profile.scan.bytesPerSecond,motorCruise:profile.motorCruise||'recorded'}:null,
         options:{...(profile.acquisitionOptions||{pixelSampling:'deletion',exposureMultiplier:1,
           dummyLines:{setting:'recorded',recorded:profile.scan?.lineSel??null,used:profile.scan?.lineSel??null},averagingReducesPixels:false}),
-          calibration:p.calibrated?'live AFE and shading':'recorded vendor AFE and shading'},
+          calibration:p.calibrationNote||(p.calibrated?'live AFE and shading':'recorded vendor AFE and shading')},
         illuminationCheck:p.lamp?{...p.lamp,reference:profile.lamp,limits:CaptureRuntime.LAMP_LIMITS}:null,
-        hardwareShading:(p.calibrated?'live':'recorded vendor')+' shading tables applied by the scanner before USB transfer'},
-      processing:{multiExposure:p.processing?.multiExposure||null,infrared:p.processing?.infrared?{...p.processing.infrared,overlay:p.repairMask?{...p.repairMask,note:`${p.repairMask.mode==='repair'?'repaired':'detected'} defects at preview size (orientation as stored, before the TIFF orientation tag); 8-bit PNG, 255 = defect`}:null}:null,channelShiftLines:align.shifts,channelShiftSource:align.used,channelShiftConfidence:align.confidence,
+        hardwareShading:p.calibrationNote?'none: the OpticFilm 8100 applies no shading; the host did (see calibration)':(p.calibrated?'live':'recorded vendor')+' shading tables applied by the scanner before USB transfer'},
+      processing:{tone:p.tone||null,multiExposure:p.processing?.multiExposure||null,infrared:p.processing?.infrared?{...p.processing.infrared,overlay:p.repairMask?{...p.repairMask,note:`${p.repairMask.mode==='repair'?'repaired':'detected'} defects at preview size (orientation as stored, before the TIFF orientation tag); 8-bit PNG, 255 = defect`}:null}:null,channelShiftLines:align.shifts,channelShiftSource:align.used,channelShiftConfidence:align.confidence,
         recordedChannelShifts:profile.shifts,interpolation:settings.pixels==='lanczos'&&g.yMul>=2?'Lanczos-3 kernel (alignment and line reduction in one resample)':'linear between bracketing lines',
         columnStagger:{rawLineOffsets:g.stagger||[],
           order:'native even/odd columns, before orientation',
@@ -210,7 +216,7 @@
   function release(p){
     const rec={number:p.number,base:p.base,scanned:p.started,film:p.settings.film,profile:p.profile.name,
       orientation:p.settings.orientation,mirror:p.settings.mirror!==false,files:p.saved.map(({kind,name,bytes,sha256,width,height})=>({kind,name,bytes,sha256,width,height})),
-      shifts:p.align.shifts,shiftConfidence:p.align.confidence,lampWarning:p.lamp?.warning||null,enhanced:[p.processing?.multiExposure?'ME':null,p.processing?.infrared?'IR':null].filter(Boolean),displayReferred:!!p.processing?.multiExposure?.fusion,repairMask:p.repairMask||null,thumb:p.preview?.thumb||null,large:p.preview?.large||null,status:'saved'};
+      shifts:p.align.shifts,shiftConfidence:p.align.confidence,lampWarning:p.lamp?.warning||null,enhanced:[p.processing?.multiExposure?'ME':null,p.processing?.infrared?'IR':null].filter(Boolean),displayReferred:!!p.processing?.multiExposure?.fusion||!!p.tone,repairMask:p.repairMask||null,thumb:p.preview?.thumb||null,large:p.preview?.large||null,status:'saved'};
     p.bytes=null;p.g=null;p.preview=null;p.trace=null;p.aligned=null;p.irPlane=null;
     return rec;
   }

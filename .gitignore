@@ -23,3 +23,9 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# raw USB captures (large, local only)
+/captures/
+
+# built capture tool
+/tools/usbspy/libusbspy.dylib

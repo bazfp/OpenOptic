@@ -143,7 +143,8 @@ unprocessed sensor values, and a 16-bit linear TIFF stores exactly that, lossles
 | **Plustek OpticFilm 7600i**, first hardware version (GL843) | ✅ Supported |
 | OpticFilm 7600i, later hardware version (GL845) | ❌ Not yet supported |
 | OpticFilm 8200i | ❌ Not yet supported |
-| Other OpticFilm models (7200, 7300, 7400, 7500i, 8100, 8300i …) | ❌ Not yet supported |
+| **Plustek OpticFilm 8100** (GL845, bcdDevice 6.05) | 🔧 Experimental. Boot, homing, the 900 ppi framing preview and full-frame scans at 1800, 3600 and 7200 ppi are proven on hardware, using the recorded vendor exposure, with software flat-field. See the [8100 section](docs/USER_GUIDE.md#opticfilm-8100-experimental) of the user guide. The 7200 ppi pass is the recorded crop widened to the full window (see `tools/build_capture_profiles.py`). Multi-exposure works at 3600 ppi. Live calibration is not built, and the 8100 has no infrared channel, so dust and scratch repair is not possible on it. Built from USB captures of the free trial software (see `tools/usbspy`). |
+| Other OpticFilm models (7200, 7300, 7400, 7500i, 8300i …) | ❌ Not yet supported |
 
 **Which 7600i do I have?** The 7600i has been sold under several names (7600i, 7600i SE, 7600i
 Ai) that differ in the bundled software. What matters is the electronics inside. Plustek has
