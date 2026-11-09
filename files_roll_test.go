@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -162,5 +163,42 @@ func TestTrashMovesToDeletedFolder(t *testing.T) {
 	}
 	if call(`{"dir":`+strconvQuote(dir)+`,"names":["../x.tif"]}`).Code != 400 || call(`{"dir":"relative","names":["R_02.tif"]}`).Code != 400 {
 		t.Fatal("unsafe requests must be refused")
+	}
+}
+
+func TestRevealShowsOnlyExistingSafeFiles(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "R_01.tif"), []byte("x"), 0o644)
+	os.Mkdir(filepath.Join(dir, "Fake.tif"), 0o755)
+	os.Symlink(filepath.Join(dir, "R_01.tif"), filepath.Join(dir, "Link.tif"))
+	var got []string
+	old := revealCommand
+	defer func() { revealCommand = old }()
+	revealCommand = func(path, d string) *exec.Cmd { // never open a real window in a test; run a command that exits 0
+		got = append(got, path+"|"+d)
+		return exec.Command(os.Args[0], "-test.run=NONE")
+	}
+	call := func(d, n string) int {
+		return post(handleFilesReveal, `{"dir":`+strconvQuote(d)+`,"name":`+strconvQuote(n)+`}`).Code
+	}
+	if c := call(dir, "R_01.tif"); c != http.StatusNoContent {
+		t.Fatalf("existing file: %d", c)
+	}
+	if len(got) != 1 || got[0] != filepath.Join(dir, "R_01.tif")+"|"+dir {
+		t.Fatalf("command built for %v", got)
+	}
+	for name, want := range map[string]int{"Nope.tif": 404, "Fake.tif": 404, "Link.tif": 404, "../R_01.tif": 400, "a/b.tif": 400, "R_01.exe": 400} {
+		if c := call(dir, name); c != want {
+			t.Errorf("%s: got %d, want %d", name, c, want)
+		}
+	}
+	if c := call("relative/dir", "R_01.tif"); c != 400 {
+		t.Errorf("relative folder: %d", c)
+	}
+	if post(handleFilesReveal, `{bad json`).Code != 400 {
+		t.Error("bad json accepted")
+	}
+	if len(got) != 1 {
+		t.Fatalf("a refused request still ran a command: %v", got)
 	}
 }

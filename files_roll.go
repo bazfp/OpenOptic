@@ -13,7 +13,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -363,4 +365,49 @@ func handleFilesTrash(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"moved": moved, "folder": bin})
+}
+
+// revealCommand builds the command that shows a file in the system file manager. A variable so the tests do not open a window.
+var revealCommand = func(path, dir string) *exec.Cmd {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", "-R", path) // Finder, with the file selected
+	case "windows":
+		return exec.Command("explorer.exe", "/select,"+path) // File Explorer, with the file selected (explorer exits 1 even on success)
+	}
+	return exec.Command("xdg-open", dir) // Linux has no common way to select a file: open its folder
+}
+
+// POST /api/files/reveal {"dir": "...", "name": "..."} -> 204. Shows one file of the roll folder in the system file manager.
+// Same rules as the other file calls: absolute folder, safe file name, and the file must exist as a regular file there.
+func handleFilesReveal(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Dir  string `json:"dir"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	dir, err := checkDir(req.Dir)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := checkName(req.Name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	path := filepath.Join(dir, req.Name)
+	if st, err := os.Lstat(path); err != nil || !st.Mode().IsRegular() {
+		http.Error(w, "that file is not in the folder any more", http.StatusNotFound)
+		return
+	}
+	cmd := revealCommand(path, dir)
+	if err := cmd.Start(); err != nil {
+		http.Error(w, "cannot open the file manager: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	go cmd.Wait() // do not wait for the window; explorer.exe's exit status is meaningless
+	w.WriteHeader(http.StatusNoContent)
 }

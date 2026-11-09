@@ -395,6 +395,9 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/api/files/mkdir":
 		handleFilesMkdir(w, r)
 		return
+	case "/api/files/reveal":
+		handleFilesReveal(w, r)
+		return
 	case "/api/files/pickdir":
 		handleFilesPickDir(w, r) // blocks until the dialog closes; outside the USB lock
 		return
