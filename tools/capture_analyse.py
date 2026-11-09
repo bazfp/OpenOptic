@@ -44,10 +44,48 @@ def packets(path):
         off += blen
 
 
+def is_usbspy(path):
+    with open(path, 'rb') as f:
+        return b'usbspy loaded' in f.read(256)
+
+
+def usbspy_raw(path):
+    """Raw events from a tools/usbspy text log (macOS IOUSBLib interposer).
+
+    Only vendor control requests and bulk transfers are used; standard requests in such a log belong to
+    other devices the host program enumerated. Bulk IN payloads the logger truncated (large transfers
+    keep only their first 32 bytes) are zero-padded to their real length, so sizes stay right but the
+    pixels of those transfers are not real."""
+    import re
+    line = re.compile(r'^([\d.]+) (CTRL|BULKOUT|BULKIN)\S* (.*)$')
+    raw = []
+    for l in open(path):
+        m = line.match(l.rstrip('\n'))
+        if not m:
+            continue
+        ts, kind, rest = int(float(m.group(1)) * 1e6), m.group(2), m.group(3)
+        head, _, hexdata = rest.partition('data=')
+        data = bytes.fromhex(hexdata.strip())
+        f = dict(x.split('=', 1) for x in head.split() if '=' in x)
+        if kind == 'CTRL':
+            if 'rt' not in f or int(f['rt'], 16) & 0x60 != 0x40:
+                continue
+            e = dict(ts=ts, kind='ctl', bmr=int(f['rt'], 16), req=int(f['req'], 16), wv=int(f['val'], 16),
+                     wi=int(f['idx'], 16), out=b'', inp=b'')
+            e['inp' if e['bmr'] & 0x80 else 'out'] = data
+            raw.append(e)
+        elif kind == 'BULKOUT':
+            raw.append(dict(ts=ts, kind='bout', data=data))
+        elif f.get('ret') == '00000000':
+            got = int(f['got'])
+            raw.append(dict(ts=ts, kind='bin', data=data + bytes(max(0, got - len(data)))))
+    return raw
+
+
 def decode(path):
     """Return a list of protocol events (t, kind, a, b) and the raw events."""
     pend, raw = {}, []
-    for ts, p in packets(path):
+    for ts, p in (() if is_usbspy(path) else packets(path)):
         hl, irp, status, func, info, bus, dev, ep, xfer, dlen = struct.unpack_from('<HQIHBHHBBI', p, 0)
         data, resp = bytes(p[hl:hl + dlen]), bool(info & 1)
         if xfer == 2:
@@ -64,8 +102,10 @@ def decode(path):
                 raw.append(dict(ts=ts, kind='bout', data=data))
         elif xfer == 1 and resp:
             raw.append(dict(ts=ts, kind='int', data=data))
+    if is_usbspy(path):
+        raw = usbspy_raw(path)
     if not raw:
-        sys.exit('no USBPcap traffic found')
+        sys.exit('no USB traffic found')
     t0, S, addr = raw[0]['ts'], [], None
     for e in raw:
         t = (e['ts'] - t0) / 1e6
