@@ -17,8 +17,9 @@ const udevRulePath = "/etc/udev/rules.d/70-openoptic.rules"
 
 // the rule file written by versions before the rename still grants access
 const legacyUdevRulePath = "/etc/udev/rules.d/70-opticfilm.rules"
-const udevRule = `# Plustek OpticFilm 7600i: let the logged-in desktop user open the scanner.
+const udevRule = `# Plustek OpticFilm 7600i and 8100: let the logged-in desktop user open the scanner.
 SUBSYSTEM=="usb", ATTR{idVendor}=="07b3", ATTR{idProduct}=="0c3b", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="07b3", ATTR{idProduct}=="130c", MODE="0660", TAG+="uaccess"
 `
 
 // invokingUser returns the uid/gid of the user who ran sudo, if any.

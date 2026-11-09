@@ -45,16 +45,61 @@ var captureSim []byte
 //go:embed motion.js
 var motionJS []byte
 
+//go:embed devices.js
+var devicesJS []byte
+
+//go:embed gl845.js
+var gl845JS []byte
+
+//go:embed home_plans.js
+var homePlansJS []byte
+
 //go:embed enhance.js
 var enhanceJS []byte
 
+//go:embed shading.js
+var shadingJS []byte
+
+//go:embed shading_8100.js
+var shading8100JS []byte
+
 const (
 	scannerVID  = 0x07B3
-	scannerPID  = 0x0C3B
+	scannerPID  = 0x0C3B // the 7600i; scannerPIDs lists every model the helper opens
 	ctlTimeout  = 5 * time.Second
 	bulkTimeout = 60 * time.Second
 	maxTransfer = 1 << 20
 )
+
+// scannerPIDs are the Plustek models the helper will open, in order. Opening a model does not mean driving
+// it: the page (devices.js) decides which revisions are supported.
+var scannerPIDs = []uint16{0x0C3B, 0x130C}
+
+// openKnown opens the first attached scanner from scannerPIDs.
+func openKnown() (Device, uint16, error) {
+	var first error
+	for _, pid := range scannerPIDs {
+		d, err := openDevice(scannerVID, pid)
+		if err == nil {
+			return d, pid, nil
+		}
+		if first == nil {
+			first = err
+		}
+	}
+	return nil, 0, fmt.Errorf("no supported scanner found (tried %s): %v", pidList(), first)
+}
+
+func pidList() string {
+	s := ""
+	for i, p := range scannerPIDs {
+		if i > 0 {
+			s += ", "
+		}
+		s += fmt.Sprintf("%04x:%04x", scannerVID, p)
+	}
+	return s
+}
 
 // Device is the small USB surface the scanner page needs. Each OS provides openDevice.
 type Device interface {
@@ -88,6 +133,7 @@ type Endpoint struct {
 }
 
 type OpenInfo struct {
+	ProductID   uint16     `json:"productId"`
 	Backend     string     `json:"backend"`
 	ProductName string     `json:"productName"`
 	BcdDevice   uint16     `json:"bcdDevice"`
@@ -189,7 +235,7 @@ func (s *server) closeDev() {
 
 func (s *server) handleOpen(w http.ResponseWriter, r *http.Request) {
 	s.closeDev()
-	d, err := openDevice(scannerVID, scannerPID)
+	d, pid, err := openKnown()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -200,6 +246,7 @@ func (s *server) handleOpen(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	info.ProductID = pid
 	s.dev = d
 	log.Printf("opened %s (bcdDevice %x) via %s, %d endpoints", info.ProductName, info.BcdDevice, info.Backend, len(info.Endpoints))
 	json.NewEncoder(w).Encode(info)
@@ -312,7 +359,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodGet {
 		scripts := map[string][]byte{"/capture_profiles.js": captureProfiles, "/capture_runtime.js": captureRuntime,
-			"/roll.js": rollJS, "/capture_sim.js": captureSim, "/motion.js": motionJS, "/enhance.js": enhanceJS}
+			"/roll.js": rollJS, "/capture_sim.js": captureSim, "/motion.js": motionJS, "/devices.js": devicesJS, "/gl845.js": gl845JS, "/home_plans.js": homePlansJS, "/enhance.js": enhanceJS, "/shading.js": shadingJS, "/shading_8100.js": shading8100JS}
 		if b, ok := scripts[r.URL.Path]; ok {
 			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 			w.Write(b)
