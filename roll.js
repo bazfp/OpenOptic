@@ -155,6 +155,7 @@
           // "ready to view": tone the aligned data once (a retry reuses pending.aligned, so it is marked); fused output is already display-referred
           if(settings.tone==='view'&&!a.displayReferred&&!a.toned){
             const t=CaptureRuntime.toneView(new Uint16Array(a.data.buffer,a.data.byteOffset,a.data.byteLength>>1),a.width,a.height,settings.film);
+            if(typeof Adjust!=='undefined'&&!Adjust.isNeutral({brightness:settings.brightness,contrast:settings.contrast})){ const adj=Adjust.norm({brightness:settings.brightness,contrast:settings.contrast}); Adjust.apply16(new Uint16Array(a.data.buffer,a.data.byteOffset,a.data.byteLength>>1),adj); t.adjust=adj; }   // adjust add-on
             pending.tone={mode:'view',...t,note:'linear data tone-mapped for viewing: per-channel levels at the 0.1/99.9 percentiles of non-saturated pixels, then '+(t.film==='pos'?'gamma 2.2':'density curve with gamma 1.4')+' (as the on-screen preview)'}; a.toned=true; }
           const note=(pending.tone?' tone: ready to view;':'')+(pending.processing?.multiExposure?` multi-exposure ${pending.processing.multiExposure.mode}${pending.processing.multiExposure.fusion?' (exposure-fused negative)':''}`:'');
           // with infrared, the registered IR plane is the 4th sample of every pixel (RGBI, ExtraSamples

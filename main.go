@@ -57,6 +57,9 @@ var homePlansJS []byte
 //go:embed enhance.js
 var enhanceJS []byte
 
+//go:embed adjust.js
+var adjustJS []byte // adjust add-on (optional brightness/contrast)
+
 //go:embed shading.js
 var shadingJS []byte
 
@@ -359,7 +362,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodGet {
 		scripts := map[string][]byte{"/capture_profiles.js": captureProfiles, "/capture_runtime.js": captureRuntime,
-			"/roll.js": rollJS, "/capture_sim.js": captureSim, "/motion.js": motionJS, "/devices.js": devicesJS, "/gl845.js": gl845JS, "/home_plans.js": homePlansJS, "/enhance.js": enhanceJS, "/shading.js": shadingJS, "/shading_8100.js": shading8100JS}
+			"/roll.js": rollJS, "/capture_sim.js": captureSim, "/motion.js": motionJS, "/devices.js": devicesJS, "/gl845.js": gl845JS, "/home_plans.js": homePlansJS, "/enhance.js": enhanceJS, "/adjust.js": adjustJS, "/shading.js": shadingJS, "/shading_8100.js": shading8100JS}
 		if b, ok := scripts[r.URL.Path]; ok {
 			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 			w.Write(b)

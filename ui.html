@@ -201,6 +201,11 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
         <select id="tiffKind"><option value="aligned">aligned RGB 16-bit</option><option value="both">aligned + raw USB</option><option value="raw">raw USB only</option></select></div>
       <div class="field"><label for="tone">Tone</label>
         <select id="tone"><option value="linear">linear (for negative converters)</option><option value="view">ready to view</option></select></div>
+      <!-- adjust add-on: brightness and contrast for the ready-to-view tone -->
+      <div class="field"><label for="brightNum">Brightness</label><div class="inline"><input type="range" id="bright" min="-100" max="100" step="1" aria-label="Brightness slider"><input type="number" id="brightNum" step="0.5" style="width:5.5em" aria-label="Brightness value"></div></div>
+      <div class="field"><label for="contrastNum">Contrast</label><div class="inline"><input type="range" id="contrast" min="-100" max="100" step="1" aria-label="Contrast slider"><input type="number" id="contrastNum" step="0.5" style="width:5.5em" aria-label="Contrast value"></div></div>
+      <div class="field"><label></label><button type="button" id="adjReset" title="Set brightness and contrast back to 0">Reset brightness &amp; contrast</button></div>
+      <div class="note"><span class="foot">Brightness and contrast act on <b>Tone: ready to view</b> only, in the preview and in the saved TIFF. Linear data is never changed. Type a value for fine tuning (decimals allowed; values beyond ±100 are accepted, limit ±1000). Double-click a slider to reset it.</span></div>
       <div class="note"><b class="lead">With <b>Tone: linear</b>, TIFFs hold the scanner’s linear 16-bit data — not inverted or colour balanced, ready for a negative converter.</b><ul><li><b>Film type</b> only changes the preview (and, with Tone: ready to view, the curve); <b>orientation</b> is stored as a TIFF tag.</li><li><b>Tone: ready to view</b> — the TIFF gets the same curve as the on-screen preview (still 16-bit) so slides and negatives look right in any viewer. The linear data is then not kept in that file: choose “aligned + raw USB” to keep the raw samples too. Multi-exposure fusion output is already tone-mapped and is left as it is.</li></ul><span class="foot">The linear option includes both multi-exposure modes and infrared repair.</span></div>
       <label class="check"><input type="checkbox" id="saveJpeg"> also save a preview JPEG</label>
       <div class="field"><label for="lampCheck">Illumination check</label>
@@ -295,6 +300,7 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
 <script src="gl845.js"></script>
 <script src="home_plans.js"></script>
 <script src="shading.js"></script>
+<script src="adjust.js"></script><!-- adjust add-on -->
 <script src="shading_8100.js"></script>
 <script>
 'use strict';
@@ -749,7 +755,7 @@ const sep=(window.NATIVE_USB?.defaultDir||'').includes('\\')?'\\':'/';
 // a roll is a folder named by its date (2026-10-06); the frames in it keep the file prefix (Roll_01.tif …)
 const today=()=>{ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const defaults={dir:window.NATIVE_USB?.defaultDir?window.NATIVE_USB.defaultDir+sep+today():'',prefix:'Roll_',next:1,digits:2,film:'neg',orientation:1,
-  tiff:'aligned',tone:'linear',pixels:'lanczos',profile:'full',jpeg:false,mirror:true,warm:1,keepLamp:true,lampCheck:'warn',blackLevel:true,pixelSampling:'deletion',multiExposure:'off',meFactor:'3',infrared:'off',dummyLines:'none',btn3:'scan',btn2:'preview'};
+  tiff:'aligned',tone:'linear',brightness:0,contrast:0,pixels:'lanczos',profile:'full',jpeg:false,mirror:true,warm:1,keepLamp:true,lampCheck:'warn',blackLevel:true,pixelSampling:'deletion',multiExposure:'off',meFactor:'3',infrared:'off',dummyLines:'none',btn3:'scan',btn2:'preview'};
 let settings={...defaults}, records=[], pending=null, selected=null, rescan=null;
 try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s){ settings={...defaults,...s.settings}; records=s.records||[]; if(!s.v&&settings.warm===20) settings.warm=1; if((s.v||0)<3&&settings.dummyLines==='recorded') settings.dummyLines='none'; delete settings.exposureMultiplier; if((s.v||0)<4&&settings.pixels==='square') settings.pixels='lanczos';
     // an untouched old default (Roll001_ in …/Roll001, or Roll_ in …/Roll) with no frames moves to today's dated roll
@@ -767,10 +773,11 @@ for(const p of document.querySelectorAll('aside .note')){
   host.appendChild(b);
 }
 const bind=[['outDir','dir','text'],['prefix','prefix','text'],['nextNo','next','int'],['digits','digits','int'],['film','film','text'],['orient','orientation','int'],
-  ['tiffKind','tiff','text'],['tone','tone','text'],['pixels','pixels','text'],['profileSel','profile','text'],['saveJpeg','jpeg','check'],['mirror','mirror','check'],['warm','warm','int'],['keepLamp','keepLamp','check'],['lampCheck','lampCheck','text'],['pixelSampling','pixelSampling','text'],['multiExposure','multiExposure','text'],['meFactor','meFactor','text'],['infrared','infrared','text'],['dummyLines','dummyLines','text'],['btn3','btn3','text'],['btn2','btn2','text']];
+  ['tiffKind','tiff','text'],['tone','tone','text'],['brightNum','brightness','num'],['contrastNum','contrast','num'],['pixels','pixels','text'],['profileSel','profile','text'],['saveJpeg','jpeg','check'],['mirror','mirror','check'],['warm','warm','int'],['keepLamp','keepLamp','check'],['lampCheck','lampCheck','text'],['pixelSampling','pixelSampling','text'],['multiExposure','multiExposure','text'],['meFactor','meFactor','text'],['infrared','infrared','text'],['dummyLines','dummyLines','text'],['btn3','btn3','text'],['btn2','btn2','text']];
 function toUI(){ if(settings.profile==='full1800'&&![...$('profileSel').options].some(o=>o.value==='full1800')) settings.profile='full';   // the 1800 dpi entry exists only with an 8100
-  for(const [id,k,t] of bind){ if(t==='check') $(id).checked=!!settings[k]; else $(id).value=settings[k]; } refreshName(); }
-function fromUI(){ for(const [id,k,t] of bind){ settings[k]=t==='check'?$(id).checked:t==='int'?parseInt($(id).value||'0',10):$(id).value.trim(); }
+  for(const [id,k,t] of bind){ if(t==='check') $(id).checked=!!settings[k]; else $(id).value=settings[k]; } syncAdjust(); refreshName(); }
+function syncAdjust(){ const off=settings.tone!=='view'; $('adjReset').disabled=off; for(const [sl,num] of [['bright','brightNum'],['contrast','contrastNum']]){ $(sl).value=$(num).value||0; $(sl).disabled=$(num).disabled=off; } }   // adjust add-on
+function fromUI(){ for(const [id,k,t] of bind){ settings[k]=t==='check'?$(id).checked:t==='int'?parseInt($(id).value||'0',10):t==='num'?(parseFloat($(id).value)||0):$(id).value.trim(); }
   settings.singleSampling=settings.pixels==='off'; limitDummyLines();
   const clean=Roll.cleanPrefix(settings.prefix); if(clean!==settings.prefix){ settings.prefix=clean; $('prefix').value=clean; } persist(); refreshName(); }
 // 7200 dpi without dummy lines needs 10.98 MB/s, so the scanner stalls; use Plustek's timing there.
@@ -820,6 +827,7 @@ const tifName=n=>{ try{ return (Roll.fileNames(settings,n).find(f=>f.kind==='tif
 const safeBase=n=>{ try{ return Roll.baseName(settings.prefix,n,settings.digits); }catch(e){ return '—'; } };
 for(const [id] of bind) $(id).addEventListener('change',()=>{ fromUI(); if(id==='outDir') syncFromFolder({adjust:true}); if(id==='profileSel'&&settings.profile==='full7200') say('7200 dpi needs about 1.4 GB of free memory while the frame is processed.');
   if(id==='film'||id==='orient'||id==='mirror') log('',`${{film:'film',orient:'orientation',mirror:'horizontal flip'}[id]} changed; applies to the next frame`);
+  if(id==='tone') syncAdjust();
   if(id==='tone'||id==='film') redrawPreview().catch(e=>log('w','preview redraw failed: '+e.message)); });
 $('prefix').addEventListener('input',()=>{ settings.prefix=$('prefix').value; refreshName(); });
 $('nextNo').addEventListener('input',()=>{ settings.next=parseInt($('nextNo').value||'0',10); rescan=null; refreshName(); });
@@ -1089,7 +1097,7 @@ let live=null;
 function liveStart(p,s,label){
   const lp=CaptureRuntime.livePreview(p,{maxWidth:1000,mirror:s.mirror!==false});
   const base=document.createElement('canvas'); base.width=lp.width; base.height=lp.height;
-  live={lp,base,last:0,opts:previewOpts(s),film:s.film==='display'?'display':previewFilm(s),rot:{1:0,6:90,3:180,8:-90}[s.orientation]||0,label};
+  live={lp,base,last:0,opts:previewOpts(s),adj:s.tone==='view'&&s.film!=='display'?{brightness:s.brightness,contrast:s.contrast}:null,film:s.film==='display'?'display':previewFilm(s),rot:{1:0,6:90,3:180,8:-90}[s.orientation]||0,label};
   const c=$('live'), swap=Math.abs(live.rot)===90; c.width=swap?lp.height:lp.width; c.height=swap?lp.width:lp.height;
   const x=c.getContext('2d'); x.fillStyle='#000'; x.fillRect(0,0,c.width,c.height);
   c.hidden=false; $('view').hidden=true; $('hint').hidden=true; $('liveTag').hidden=false; $('liveTag').textContent=label;
@@ -1098,13 +1106,21 @@ function liveDraw(force){
   const L=live; if(!L||!L.lp.rows) return;
   const now=performance.now(); if(!force&&now-L.last<300) return; L.last=now;
   const {lp,base}=L, rows=lp.rows, bx=base.getContext('2d'), im=bx.createImageData(lp.width,rows);
-  const px=CaptureRuntime.renderPreview(lp.planes,{pixels:lp.width,lines:rows},L.film,L.opts);
+  const px=CaptureRuntime.renderPreview(lp.planes,{pixels:lp.width,lines:rows},L.film,L.opts); if(L.adj) Adjust.applyRGBA(px,L.adj);   // adjust add-on
   im.data.set(px); bx.putImageData(im,0,0);
   const c=$('live'), x=c.getContext('2d'); x.save(); x.setTransform(1,0,0,1,0,0); x.translate(c.width/2,c.height/2); x.rotate(L.rot*Math.PI/180);
   x.drawImage(base,-base.width/2,-base.height/2); x.restore();
   $('liveTag').textContent=`${L.label} · ${Math.round(rows/lp.height*100)} %`;
 }
 
+// adjust add-on: slider and number box stay in step and redraw the shown preview while changing; double-click a slider to reset.
+// The number box is not capped to the slider's range (the slider just sits at its end).
+{ let t=null; const redraw=()=>{ fromUI(); clearTimeout(t); t=setTimeout(()=>redrawPreview().catch(()=>{}),80); };
+  for(const [sl,num] of [['bright','brightNum'],['contrast','contrastNum']]){
+    $(sl).addEventListener('input',()=>{ $(num).value=$(sl).value; redraw(); });
+    $(num).addEventListener('input',()=>{ $(sl).value=$(num).value||0; redraw(); });
+    $(sl).addEventListener('dblclick',()=>{ $(sl).value=0; $(num).value=0; redraw(); }); }
+  $('adjReset').addEventListener('click',()=>{ for(const id of ['bright','contrast','brightNum','contrastNum']) $(id).value=0; redraw(); log('','brightness and contrast reset to 0'); }); }
 // With an OpticFilm 8100 (only) what the preview shows follows the Tone setting for slides: "linear" is the raw data as the TIFF opens in a viewer (dark), "ready to
 // view" is the toned look that will be saved. Negatives always show the inverted film-aware look (a raw negative is useless for
 // framing, and the saved "ready to view" negative matches it).
@@ -1119,7 +1135,7 @@ async function redrawPreview(){
 async function makePreview(planes,g,s){
   const c=document.createElement('canvas'); c.width=g.pixels; c.height=g.lines;
   const ctx=c.getContext('2d'), im=ctx.createImageData(g.pixels,g.lines);
-  const px=CaptureRuntime.renderPreview(planes,g,s.film==='display'?'display':previewFilm(s),previewOpts(s));
+  const px=CaptureRuntime.renderPreview(planes,g,s.film==='display'?'display':previewFilm(s),previewOpts(s)); if(s.tone==='view'&&s.film!=='display') Adjust.applyRGBA(px,{brightness:s.brightness,contrast:s.contrast});   // adjust add-on
   im.data.set(px); ctx.putImageData(im,0,0);
   const rot={1:0,6:90,3:180,8:-90}[s.orientation]||0, swap=Math.abs(rot)===90;
   const o=document.createElement('canvas'); o.width=swap?c.height:c.width; o.height=swap?c.width:c.height;

@@ -13,4 +13,6 @@ assert(/renderPreview\(planes,g,s\.film==='display'\?'display':previewFilm\(s\),
 assert(/const previewOpts=s=>\(\{skipSaturated:!!gl\|\|s\.tone==='view'\}\)/.test(html),'saturated pixels are skipped only for the 8100 or Tone: ready to view');
 assert(/film:s\.film==='display'\?'display':previewFilm\(s\)/.test(html),'the live view uses previewFilm');
 assert(/if\(id==='tone'\|\|id==='film'\) redrawPreview\(\)/.test(html),'Tone and Film changes redraw the preview');
+assert(/id="adjReset"/.test(html)&&/\$\('adjReset'\)\.addEventListener\('click'/.test(html),'reset button wired');
+assert(/\['brightNum','brightness','num'\],\['contrastNum','contrast','num'\]/.test(html),'number boxes carry the settings');
 console.log('preview follows Tone: slides linear/toned, negatives inverted, redraw wired');
