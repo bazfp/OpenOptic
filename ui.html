@@ -196,7 +196,9 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
     <details id="outPanel"><summary>Output options</summary>
       <div class="field"><label for="tiffKind">TIFF</label>
         <select id="tiffKind"><option value="aligned">aligned RGB 16-bit</option><option value="both">aligned + raw USB</option><option value="raw">raw USB only</option></select></div>
-      <div class="note"><b class="lead">TIFFs hold the scanner’s linear 16-bit data — not inverted or colour balanced, ready for a negative converter.</b><ul><li><b>Film type</b> only changes the preview; <b>orientation</b> is stored as a TIFF tag.</li></ul><span class="foot">This includes both multi-exposure modes and infrared repair.</span></div>
+      <div class="field"><label for="tone">Tone</label>
+        <select id="tone"><option value="linear">linear (for negative converters)</option><option value="view">ready to view</option></select></div>
+      <div class="note"><b class="lead">With <b>Tone: linear</b>, TIFFs hold the scanner’s linear 16-bit data — not inverted or colour balanced, ready for a negative converter.</b><ul><li><b>Film type</b> only changes the preview (and, with Tone: ready to view, the curve); <b>orientation</b> is stored as a TIFF tag.</li><li><b>Tone: ready to view</b> — the TIFF gets the same curve as the on-screen preview (still 16-bit) so slides and negatives look right in any viewer. The linear data is then not kept in that file: choose “aligned + raw USB” to keep the raw samples too. Multi-exposure fusion output is already tone-mapped and is left as it is.</li></ul><span class="foot">The linear option includes both multi-exposure modes and infrared repair.</span></div>
       <label class="check"><input type="checkbox" id="saveJpeg"> also save a preview JPEG</label>
       <div class="field"><label for="lampCheck">Illumination check</label>
         <select id="lampCheck"><option value="warn">warn (recommended)</option><option value="wait">wait and retry</option><option value="off">off</option></select></div>
@@ -285,6 +287,11 @@ dialog#picker::backdrop{background:rgba(0,0,0,.55)}
 <script src="enhance.js"></script>
 <script src="roll.js"></script>
 <script src="motion.js"></script>
+<script src="devices.js"></script>
+<script src="gl845.js"></script>
+<script src="home_plans.js"></script>
+<script src="shading.js"></script>
+<script src="shading_8100.js"></script>
 <script>
 'use strict';
 // ---------------------------------------------------------------- constants (v1, capture-verified)
@@ -318,6 +325,7 @@ function setLower(open){ ui.lower=open; saveUi(); document.body.classList.toggle
 $('bCollapse').onclick=()=>setLower(!ui.lower); setLower(ui.lower);
 
 // ---------------------------------------------------------------- transport
+let gl=null;   // Gl845 transport when the connected scanner is an OpticFilm 8100 (GL845), else null
 let dev=null, epIn=1, epOut=2, fake=false, cancelFlag=false, operationActive=false;
 const shadow={};
 class Cancelled extends Error{}
@@ -329,6 +337,7 @@ async function ctlOut(value,index,data){
   for(let attempt=0;attempt<10;attempt++){
     const r=await dev.controlTransferOut({requestType:'vendor',recipient:'device',request,value,index},bytes);
     if(r.status!=='ok') continue;
+    if(gl) return;   // the GL845 has no write-acknowledge
     // mandatory write-ack on bcdDevice >= 2.00: poll status word 0x20 bit 0
     for(let i=0;i<10;i++){ const a=await rawIn(0x0C,0x8E,0x20,1); if(a[0]&1) return; }
   }
@@ -342,7 +351,7 @@ async function rawIn(request,value,index,len){
 async function ctlIn(value,index,len){ const d=await rawIn(len>1?0x04:0x0C,value,index,len); rec({dir:'in',value,index,data:[...d]}); return d; }
 const writeReg=async(reg,val)=>{ await ctlOut(0x83,0,[reg,val&0xFF]); shadow[reg]=val&0xFF; };
 async function writeRegs(pairs){ for(let i=0;i<pairs.length;i+=32){ const b=[]; for(const [r,v] of pairs.slice(i,i+32)){ b.push(r,v&0xFF); shadow[r]=v&0xFF; } await ctlOut(0x83,0,b);} }
-async function readReg(reg){ await ctlOut(0x83,0,[reg]); return (await ctlIn(0x84,0,1))[0]; }
+async function readReg(reg){ if(gl) return gl.readReg(reg); await ctlOut(0x83,0,[reg]); return (await ctlIn(0x84,0,1))[0]; }
 const status=async()=>readReg(0x41);
 const write8c=(idx,val)=>ctlOut(0x8C,idx,[val]);
 async function afeWrite(addr,val){ await ctlOut(0x83,0,[0x51,addr,0x3A,(val>>8)&0xFF,0x3B,val&0xFF]); }
@@ -384,7 +393,7 @@ async function nativeOpen(){
   const q=o=>new URLSearchParams(o).toString();
   const bcd=info.bcdDevice;
   return {
-    backend:info.backend, productName:info.productName,
+    backend:info.backend, productName:info.productName, productId:info.productId,
     deviceVersionMajor:bcd>>8, deviceVersionMinor:(bcd>>4)&15, deviceVersionSubminor:bcd&15,
     configuration:{interfaces:[{alternate:{endpoints:info.endpoints}}]},
     async open(){}, async selectConfiguration(){}, async claimInterface(){},
@@ -526,14 +535,17 @@ function stopScannerEvents(){ scannerEvents.run++; scannerEvents.state='off'; fo
 // Homing and stopping use motion.js: only motor primitives recorded from the Plustek software
 // (fast/slow tables, its move registers, its way of stopping a move), with a slow final approach
 // so the carriage always parks at the same place whatever a failed scan left behind.
-let motion=null, positionKnown=false;
+let motion=null, positionKnown=false, atFrame=false, previewChain=0, idleHomeTimer=null;   // atFrame: an 8100 preview left the carriage at the frame start, off the home sensor
+const IDLE_HOME_MS=20000, MAX_PREVIEW_CHAIN=4;   // re-home after 4 chained previews: the step back can drift a few steps each time
 function motionCtl(){
-  if(!motion) motion=Motion.create({writeRegs,status,upload:uploadSlopeTable},Motion.recorded(CAPTURE_PROFILES.full),
+  if(!motion) motion=gl
+    ?Motion.createRecordedHome({send:gl.send,status:gl.status},HOME_PLANS['8100'],{log:m=>log('ok',m),sleep,now:()=>performance.now(),check:checkCancel})
+    :Motion.create({writeRegs,status,upload:uploadSlopeTable},Motion.recorded(CAPTURE_PROFILES.full),
     {log:m=>log('ok',m),sleep,now:()=>performance.now(),check:checkCancel});
   return motion;
 }
-async function stopMotor(){ positionKnown=false; await motionCtl().stop(); }
-async function home(){ positionKnown=false; say('Homing the carriage…','busy'); await motionCtl().home(); positionKnown=true; }
+async function stopMotor(){ positionKnown=false; atFrame=false; await motionCtl().stop(); }
+async function home(){ positionKnown=false; atFrame=false; previewChain=0; say('Homing the carriage…','busy'); await motionCtl().home(); positionKnown=true; }
 
 // ---------------------------------------------------------------- connect / boot
 let dry=false, connected=false;
@@ -541,7 +553,7 @@ async function connect(){
   if(window.NATIVE_USB){ dev=await nativeOpen(); log('io','native USB backend: '+dev.backend); }
   else {
     if(!navigator.usb) throw new Error('No USB access: run the OpenOptic helper program, or use a Chromium browser with WebUSB.');
-    dev=await navigator.usb.requestDevice({filters:[{vendorId:VID,productId:PID}]});
+    dev=await navigator.usb.requestDevice({filters:Devices.PIDS.map(productId=>({vendorId:VID,productId}))});
   }
   await dev.open(); if(!dev.configuration) await dev.selectConfiguration(1); await dev.claimInterface(0);
   const eps=dev.configuration.interfaces[0].alternate.endpoints;
@@ -549,13 +561,16 @@ async function connect(){
   epOut=(eps.find(e=>e.type==='bulk'&&e.direction==='out')||{endpointNumber:2}).endpointNumber;
   const bcd=(dev.deviceVersionMajor<<8)|(dev.deviceVersionMinor<<4)|dev.deviceVersionSubminor;
   $('devline').innerHTML=`<b>${dev.productName||'07b3:0c3b'}</b>  bcdDevice ${dev.deviceVersionMajor}.${dev.deviceVersionMinor}${dev.deviceVersionSubminor}  ${dev.backend||'WebUSB'}`;
-  if(bcd!==0x400) throw new Error('This scanner reports bcdDevice '+hex(bcd,4)+'. The recorded profiles are for the 7600i v1 (4.00) only.');
-  await boot(); startScannerEvents(); await home(); startButtonPoll();
+  const known=Devices.check(dev.productId||PID,bcd); if(!known.ok) throw new Error(known.message);
+  gl=known.driver==='gl845'?Gl845.create(dev,{epIn,epOut}):null; motion=null; syncProfileOptions(); toUI();
+  if(known.experimental) log('w',known.name+': experimental support. Boot, homing, the framing preview, scans at 1800, 3600 and 7200 dpi and multi-exposure (3600 dpi) work with the recorded exposure and software flat-field; live calibration is not built, and the 8100 has no infrared channel.');
+  await boot(); if(!gl) startScannerEvents(); await home(); if(!gl) startButtonPoll();
   if(dry){ dry=false; try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); settings={...defaults,...(s?.settings||{})}; records=s?.records||[]; }catch(e){} selected=null; toUI(); renderRoll(); }
   connected=true; lampOnAt=null;
   log('ok','scanner ready');
 }
 async function boot(){
+  if(gl){ await gl.boot(HOME_PLANS['8100']); lampOnAt=performance.now(); setLamp(true); log('ok','8100 booted (recorded the free trial software startup sequence); lamp on'); return; }
   await ctlIn(0x8E,0,1);
   for(const g of VENDOR.boot){ checkCancel(); if(g[0]==='8c') await write8c(g[1],g[2]); else { await ctlOut(0x83,0,g); for(let i=0;i<g.length-1;i+=2) shadow[g[i]]=g[i+1]; } }
   await writeRegs(variant.gpo); await sleep(100);
@@ -566,7 +581,7 @@ async function boot(){
 
 // ---------------------------------------------------------------- lamp
 let lampOnAt=null, lampTimer=null;
-async function lampSet(on){ const v=shadow[0x03]??0x9F; await writeReg(0x03,on?(v|0x10):(v&~0x10)); lampOnAt=on?performance.now():null; setLamp(on); }
+async function lampSet(on){ const v=shadow[0x03]??0x9F; await writeReg(0x03,gl?(on?0xBF:0x00):on?(v|0x10):(v&~0x10)); lampOnAt=on?performance.now():null; setLamp(on); }
 async function warmIfNeeded(){
   const need=Math.max(0,+settings.warm||0)*1000; if(!need) return;
   if(lampOnAt===null) await lampSet(true);
@@ -580,7 +595,51 @@ function scheduleLampOff(){
 }
 
 // ---------------------------------------------------------------- acquisition (recorded vendor profiles)
+// OpticFilm 8100: the framing preview (900 ppi) and the full 3600 ppi pass. Both results have the same shape as
+// acquire()'s, so the preview code (colour-line alignment, live drawing, rendering) and the roll saving are shared.
+// Recorded exposure, gain and shading only: no live calibration, multi-exposure, infrared or 7200 dpi yet.
+// An idle carriage that a chained preview left out is parked again, the way the LED is switched off when idle.
+function armIdleHome(){
+  clearTimeout(idleHomeTimer);
+  idleHomeTimer=setTimeout(async()=>{ if(!atFrame||operationActive||!connected) return; operationActive=true;
+    try{ if(gpioPoll.busy) await gpioPoll.busy.catch(()=>{}); await home(); log('','carriage parked after '+IDLE_HOME_MS/1000+' s idle'); say('Carriage parked.'); }
+    catch(e){ log('w','parking the carriage failed: '+e.message); } finally{ operationActive=false; enableScan(); } },IDLE_HOME_MS);
+}
+async function acquire8100(key,requested,options={}){
+  const refuse=m=>{ const e=new Error(m); e.name='ScanConfigurationError'; throw e; };
+  const PASS={full1800:'main1800',full:'main',full7200:'main7200'}, full=key in PASS;
+  // The free trial software picks the exposure (line period) per scan: 42560 for negatives and for the LONG multi-exposure pass, 31920 for slides and for the SHORT
+  // pass (4/3 shorter, so highlights are not clipped). Other resolutions have one recorded pass each.
+  const meOn=!!requested.multiExposure&&requested.multiExposure!=='off', longPass=Number(requested.exposureMultiplier)>1;
+  const pass=key==='full'?(longPass?'main':(meOn||requested.film==='pos')?'main31920':'main'):PASS[key];
+  if(key!=='prescan'&&!full) refuse('The OpticFilm 8100 scans at 1800, 3600 or 7200 dpi so far (no infrared yet).');
+  if(dry) refuse('Dry run is not available for the OpticFilm 8100.');
+  const plans=HOME_PLANS['8100'], scanSettings={...requested}; live=null; traceMark=trace.length;
+  const profile=full?Gl845.fullProfile(plans[pass]):Gl845.previewProfile(plans.preview);
+  const hooks={check:checkCancel,log:m=>log('io',m),now:()=>performance.now(),sleep:async ms=>{for(let left=ms;left>0;left-=50){checkCancel();await sleep(Math.min(left,50));}},
+    progress:(got,total,data)=>{ progress(got/total);
+      try{ if(!live) liveStart(profile,scanSettings,options.liveLabel||(full?'scanning':'framing preview')); live.lp.update(data,got); liveDraw(got===total); }catch(e){ console.warn('live preview',e); } }};
+  say(full?`Scanning at ${plans[pass].dpi} dpi (about ${fmtSecs(plans[pass].lines*plans[pass].lineMs/1000+16)})…`:'Quick preview pass…','busy'); positionKnown=false;
+  clearTimeout(idleHomeTimer);
+  const chained=!full&&atFrame&&previewChain<MAX_PREVIEW_CHAIN;
+  try{
+    // previews chain without homing (see Gl845.preview); a full scan always starts from the home sensor, which it homes to if needed
+    const r=full?await Gl845.scanFull(gl,plans,{...hooks,which:pass}):await Gl845.preview(gl,plans,{...hooks,keep:true,fromFrame:chained});
+    atFrame=!!r.atFrame; previewChain=atFrame?(chained?previewChain+1:1):0; positionKnown=!atFrame;
+    if(atFrame) armIdleHome();
+    const plan=full?plans[pass]:plans.preview;
+    Shading.apply(r.bytes,Gl845.scanGeometry(plan),plan.lines,SHADING_8100);   // the chip applies no shading: flat-field in software
+    if(scanSettings.keepLamp){ lampOnAt=lampOnAt??performance.now(); } else await lampSet(false);
+    setLamp(lampOnAt!==null);
+    // the sensor's dark level and noise (read noise, photon-transfer gain) for the multi-exposure merge, from the recorded calibration frames
+    const lamp={dark:{mean:SHADING_8100.dark,noise:SHADING_8100.noise.dark},shading:{noise:SHADING_8100.noise.white}};
+    return {bytes:r.bytes,profile:r.profile,lamp,positioning:null,calibrated:false,
+      calibrationNote:'recorded black level (register 0x3B) and exposure; software flat-field from the recorded white reference '+SHADING_8100.source};
+  }catch(e){ try{ await stopMotor(); }catch(_){} lampOnAt=null; throw e; }
+  finally{ progress(0); }
+}
 async function acquire(key, requested=settings, options={}){
+  if(gl) return acquire8100(key,requested,options);
   const scanSettings={...requested}; live=null;
   const p=CaptureRuntime.prepareProfile(CAPTURE_PROFILES[key],scanSettings); traceMark=trace.length;
   const dl=p.acquisitionOptions?.dummyLines;
@@ -686,7 +745,7 @@ const sep=(window.NATIVE_USB?.defaultDir||'').includes('\\')?'\\':'/';
 // a roll is a folder named by its date (2026-10-06); the frames in it keep the file prefix (Roll_01.tif …)
 const today=()=>{ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const defaults={dir:window.NATIVE_USB?.defaultDir?window.NATIVE_USB.defaultDir+sep+today():'',prefix:'Roll_',next:1,digits:2,film:'neg',orientation:1,
-  tiff:'aligned',pixels:'lanczos',profile:'full',jpeg:false,mirror:true,warm:1,keepLamp:true,lampCheck:'warn',blackLevel:true,pixelSampling:'deletion',multiExposure:'off',meFactor:'3',infrared:'off',dummyLines:'none',btn3:'scan',btn2:'preview'};
+  tiff:'aligned',tone:'linear',pixels:'lanczos',profile:'full',jpeg:false,mirror:true,warm:1,keepLamp:true,lampCheck:'warn',blackLevel:true,pixelSampling:'deletion',multiExposure:'off',meFactor:'3',infrared:'off',dummyLines:'none',btn3:'scan',btn2:'preview'};
 let settings={...defaults}, records=[], pending=null, selected=null, rescan=null;
 try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s){ settings={...defaults,...s.settings}; records=s.records||[]; if(!s.v&&settings.warm===20) settings.warm=1; if((s.v||0)<3&&settings.dummyLines==='recorded') settings.dummyLines='none'; delete settings.exposureMultiplier; if((s.v||0)<4&&settings.pixels==='square') settings.pixels='lanczos';
     // an untouched old default (Roll001_ in …/Roll001, or Roll_ in …/Roll) with no frames moves to today's dated roll
@@ -704,8 +763,9 @@ for(const p of document.querySelectorAll('aside .note')){
   host.appendChild(b);
 }
 const bind=[['outDir','dir','text'],['prefix','prefix','text'],['nextNo','next','int'],['digits','digits','int'],['film','film','text'],['orient','orientation','int'],
-  ['tiffKind','tiff','text'],['pixels','pixels','text'],['profileSel','profile','text'],['saveJpeg','jpeg','check'],['mirror','mirror','check'],['warm','warm','int'],['keepLamp','keepLamp','check'],['lampCheck','lampCheck','text'],['pixelSampling','pixelSampling','text'],['multiExposure','multiExposure','text'],['meFactor','meFactor','text'],['infrared','infrared','text'],['dummyLines','dummyLines','text'],['btn3','btn3','text'],['btn2','btn2','text']];
-function toUI(){ for(const [id,k,t] of bind){ if(t==='check') $(id).checked=!!settings[k]; else $(id).value=settings[k]; } refreshName(); }
+  ['tiffKind','tiff','text'],['tone','tone','text'],['pixels','pixels','text'],['profileSel','profile','text'],['saveJpeg','jpeg','check'],['mirror','mirror','check'],['warm','warm','int'],['keepLamp','keepLamp','check'],['lampCheck','lampCheck','text'],['pixelSampling','pixelSampling','text'],['multiExposure','multiExposure','text'],['meFactor','meFactor','text'],['infrared','infrared','text'],['dummyLines','dummyLines','text'],['btn3','btn3','text'],['btn2','btn2','text']];
+function toUI(){ if(settings.profile==='full1800'&&![...$('profileSel').options].some(o=>o.value==='full1800')) settings.profile='full';   // the 1800 dpi entry exists only with an 8100
+  for(const [id,k,t] of bind){ if(t==='check') $(id).checked=!!settings[k]; else $(id).value=settings[k]; } refreshName(); }
 function fromUI(){ for(const [id,k,t] of bind){ settings[k]=t==='check'?$(id).checked:t==='int'?parseInt($(id).value||'0',10):$(id).value.trim(); }
   settings.singleSampling=settings.pixels==='off'; limitDummyLines();
   const clean=Roll.cleanPrefix(settings.prefix); if(clean!==settings.prefix){ settings.prefix=clean; $('prefix').value=clean; } persist(); refreshName(); }
@@ -715,16 +775,30 @@ function limitDummyLines(){
   if(at7200&&settings.dummyLines==='none') settings.dummyLines='recorded';
   $('dummyLines').querySelector('option[value="none"]').disabled=at7200; $('dummyLines').value=settings.dummyLines;
 }
+// OpticFilm 8100: the resolution menu lists its own passes, labelled from the recorded plans (the 7600i's numbers do not apply), and the
+// 1800 dpi entry exists only while an 8100 is connected.
+const GL_PASS={prescan:['preview',900],full1800:['main1800',1800],full:['main',3600],full7200:['main7200',7200]};
+function glLabel(key){ const [name,dpi]=GL_PASS[key], p=HOME_PLANS['8100'][name], secs=p.lines*p.lineMs/1000+(key==='prescan'?8:16);
+  return `${dpi} dpi · ~${Math.round(p.bytes/1048576)} MB · ~${fmtSecs(secs)}`; }
+function syncProfileOptions(){
+  // multi-exposure on an 8100: one recorded long pass, 4/3 of the short exposure (what the free trial software does); no infrared channel
+  const mf=$('meFactor');
+  if(gl){ if(mf.dataset.orig===undefined) mf.dataset.orig=mf.innerHTML; mf.innerHTML='<option value="1.333">1.33× exposure (as the free trial software)</option>'; settings.meFactor='1.333'; settings.infrared='off'; }
+  else if(mf.dataset.orig!==undefined&&mf.dataset.orig!==''){ mf.innerHTML=mf.dataset.orig; mf.dataset.orig=''; if(settings.meFactor==='1.333') settings.meFactor='3'; }
+  const sel=$('profileSel'), o18=[...sel.options].find(o=>o.value==='full1800');
+  if(gl&&!o18){ const o=document.createElement('option'); o.value='full1800'; sel.insertBefore(o,[...sel.options].find(x=>x.value==='full')||null); }
+  if(!gl&&o18){ if(sel.value==='full1800'){ sel.value='full'; settings.profile='full'; } o18.remove(); }
+}
 function refreshName(){
   let t; try{ t=Roll.fileNames(settings,settings.next).map(f=>f.name).join('  '); }catch(e){ t='—'; }
   $('nextName').textContent=t; $('scanLabel').textContent=!(connected||dry)?'Connect scanner':rescan!==null?`Rescan ${tifName(rescan)} (overwrite)`:`Scan & Save ${tifName(settings.next)}`;
-  for(const o of $('profileSel').options){ const ps=scanPasses(o.value), s=scanSecs(o.value);
+  for(const o of $('profileSel').options){ if(gl&&GL_PASS[o.value]){ o.textContent=glLabel(o.value); o.title=''; continue; } const ps=scanPasses(o.value), s=scanSecs(o.value);
     o.textContent=`${DPI_LABEL[o.value]} · ${DPI_MB[o.value]} · ~${fmtSecs(s)}${ps.length>1?` (${ps.length} passes)`:''}`;
     o.title=ps.map(([n,t])=>`${n} ~${fmtSecs(t)}`).join(' + '); }
   $('meFactor').closest('.field').hidden=settings.multiExposure==='off';   // only the second pass's exposure
   $('profileSel').title=($('profileSel').selectedOptions[0]?.title||'')+'\n'+(DPI_INFO[settings.profile]||'');
   const base=passSecs('full',{dummyLines:settings.dummyLines,singleSampling:settings.singleSampling});
-  for(const o of $('meFactor').options){ const k=Number(o.value); o.textContent=`${k}×${k===3?' (SilverFast)':''} · +${fmtSecs(passSecs('full',{dummyLines:settings.dummyLines,singleSampling:settings.singleSampling,exposureMultiplier:k})+15)}`; }
+  for(const o of $('meFactor').options){ if(gl){ o.textContent='1.33× exposure (as the free trial software)'; continue; } const k=Number(o.value); o.textContent=`${k}×${k===3?' (SilverFast)':''} · +${fmtSecs(passSecs('full',{dummyLines:settings.dummyLines,singleSampling:settings.singleSampling,exposureMultiplier:k})+15)}`; }
 }
 const DPI_LABEL={prescan:'1440 dpi',full:'3600 dpi',full7200:'7200 dpi'}, DPI_MB={prescan:'~16 MB',full:'~103 MB',full7200:'~411 MB'};
 const fmtSecs=s=>s>=100?`${Math.floor(s/60)} min${s%60>=15?' '+Math.round(s%60)+' s':''}`:`${Math.round(s)} s`;
@@ -741,7 +815,8 @@ const DPI_INFO={prescan:'Quick index scan: 1440 dpi, ~16 MB, ~16 s',full:'Full r
 const tifName=n=>{ try{ return (Roll.fileNames(settings,n).find(f=>f.kind==='tiff'||f.kind==='raw-tiff')||{name:safeBase(n)}).name; }catch(e){ return '—'; } };
 const safeBase=n=>{ try{ return Roll.baseName(settings.prefix,n,settings.digits); }catch(e){ return '—'; } };
 for(const [id] of bind) $(id).addEventListener('change',()=>{ fromUI(); if(id==='outDir') syncFromFolder({adjust:true}); if(id==='profileSel'&&settings.profile==='full7200') say('7200 dpi needs about 1.4 GB of free memory while the frame is processed.');
-  if(id==='film'||id==='orient'||id==='mirror') log('',`${{film:'film',orient:'orientation',mirror:'horizontal flip'}[id]} changed; applies to the next frame`); });
+  if(id==='film'||id==='orient'||id==='mirror') log('',`${{film:'film',orient:'orientation',mirror:'horizontal flip'}[id]} changed; applies to the next frame`);
+  if(id==='tone'||id==='film') redrawPreview().catch(e=>log('w','preview redraw failed: '+e.message)); });
 $('prefix').addEventListener('input',()=>{ settings.prefix=$('prefix').value; refreshName(); });
 $('nextNo').addEventListener('input',()=>{ settings.next=parseInt($('nextNo').value||'0',10); rescan=null; refreshName(); });
 
@@ -830,7 +905,7 @@ $('bOverlay').onclick=toggleOverlay;
 function select(r){
   selected=r; showLarge(r);
   const d=$('details'); d.hidden=false; d.innerHTML='';
-  const mb=r.files.reduce((a,x)=>a+(x.bytes||0),0)/1048576, dpi=(r.profile.match(/\d{4}/)||[''])[0];
+  const mb=r.files.reduce((a,x)=>a+(x.bytes||0),0)/1048576, dpi=profileDpi(r.profile);
   const head=document.createElement('div'); head.className='dhead';
   const tog=document.createElement('button'); tog.type='button'; tog.className='dtoggle'; tog.setAttribute('aria-expanded',String(ui.info)); tog.textContent=ui.info?'Info ▾':'Info ▸';
   tog.title='Files, sizes, checksums and channel alignment';
@@ -863,13 +938,15 @@ const imageFiles=r=>{ const img=r.files.filter(f=>f.kind==='tiff'||f.kind==='raw
 // With the helper, the roll list is rebuilt from the frame sidecars (<base>.json) in the roll folder:
 // on start, when the folder changes, and when the window regains focus. Frames without a stored
 // preview get one from their TIFF (downsampled by the helper), one at a time in the background.
+// the resolution named in a profile name: the number before "ppi"/"dpi" ("OpticFilm 8100 (3600 ppi)" -> 3600, not the model number), else the last 4-digit number ("Captured full frame 3600")
+function profileDpi(name){ const m=/(\d{3,5})\s*(?:ppi|dpi)\b/i.exec(name||''); if(m) return m[1]; const all=(name||'').match(/\d{4}/g); return all?all[all.length-1]:''; }
 function recordFromSidecar(sc,old){
   const P=sc.processing||{}, me=P.multiExposure, ir=P.infrared;
   return {number:sc.number,base:sc.frame,scanned:sc.scanned,film:sc.film||'neg',profile:sc.acquisition?.profile||'',
     orientation:sc.orientation?.tiffTag||1,mirror:P.horizontalMirror?.applied!==false,
     files:(sc.files||[]).map(({kind,name,bytes,sha256,width,height})=>({kind,name,bytes,sha256:sha256||null,width,height})),
     shifts:P.channelShiftLines||[0,0,0],shiftConfidence:P.channelShiftConfidence||[1,0,0],lampWarning:sc.acquisition?.illuminationCheck?.warning||null,
-    enhanced:[me?'ME':null,ir?'IR':null].filter(Boolean),displayReferred:!!me?.fusion&&/positive/.test(me.fusion.output||''),/* fused positives from earlier versions */repairMask:ir?.overlay||old?.repairMask||null,
+    enhanced:[me?'ME':null,ir?'IR':null].filter(Boolean),displayReferred:(!!me?.fusion&&/positive/.test(me.fusion.output||''))||P.tone?.mode==='view',/* fused positives from earlier versions */repairMask:ir?.overlay||old?.repairMask||null,
     thumb:old?.thumb||null,large:old?.large||null,status:'saved'};
 }
 let syncing=null;
@@ -991,7 +1068,7 @@ let live=null;
 function liveStart(p,s,label){
   const lp=CaptureRuntime.livePreview(p,{maxWidth:1000,mirror:s.mirror!==false});
   const base=document.createElement('canvas'); base.width=lp.width; base.height=lp.height;
-  live={lp,base,last:0,film:s.film,rot:{1:0,6:90,3:180,8:-90}[s.orientation]||0,label};
+  live={lp,base,last:0,opts:previewOpts(s),film:s.film==='display'?'display':previewFilm(s),rot:{1:0,6:90,3:180,8:-90}[s.orientation]||0,label};
   const c=$('live'), swap=Math.abs(live.rot)===90; c.width=swap?lp.height:lp.width; c.height=swap?lp.width:lp.height;
   const x=c.getContext('2d'); x.fillStyle='#000'; x.fillRect(0,0,c.width,c.height);
   c.hidden=false; $('view').hidden=true; $('hint').hidden=true; $('liveTag').hidden=false; $('liveTag').textContent=label;
@@ -1000,23 +1077,35 @@ function liveDraw(force){
   const L=live; if(!L||!L.lp.rows) return;
   const now=performance.now(); if(!force&&now-L.last<300) return; L.last=now;
   const {lp,base}=L, rows=lp.rows, bx=base.getContext('2d'), im=bx.createImageData(lp.width,rows);
-  im.data.set(CaptureRuntime.renderPreview(lp.planes,{pixels:lp.width,lines:rows},L.film)); bx.putImageData(im,0,0);
+  const px=CaptureRuntime.renderPreview(lp.planes,{pixels:lp.width,lines:rows},L.film,L.opts);
+  im.data.set(px); bx.putImageData(im,0,0);
   const c=$('live'), x=c.getContext('2d'); x.save(); x.setTransform(1,0,0,1,0,0); x.translate(c.width/2,c.height/2); x.rotate(L.rot*Math.PI/180);
   x.drawImage(base,-base.width/2,-base.height/2); x.restore();
   $('liveTag').textContent=`${L.label} · ${Math.round(rows/lp.height*100)} %`;
 }
 
+// With an OpticFilm 8100 (only) what the preview shows follows the Tone setting for slides: "linear" is the raw data as the TIFF opens in a viewer (dark), "ready to
+// view" is the toned look that will be saved. Negatives always show the inverted film-aware look (a raw negative is useless for
+// framing, and the saved "ready to view" negative matches it).
+const previewFilm=s=>gl&&s.tone==='linear'&&s.film==='pos'?'display':s.film;
+const previewOpts=s=>({skipSaturated:!!gl||s.tone==='view'});   // the 7600i's default preview is unchanged
+let lastPv=null;   // the planes behind the preview now on screen, so a Tone or Film change can redraw it
+async function redrawPreview(){
+  const lookLinear=previewFilm(settings)==='display';
+  if(lastPv&&$('view').src===lastPv.large&&!$('view').hidden){ const r=await makePreview(lastPv.planes,lastPv.g,settings); show(r.large); }
+  say(lookLinear?'Preview shows the raw linear look (how the linear TIFF opens in a viewer). Set Tone to “ready to view” to see the toned look that will be saved.':settings.film==='pos'?'Preview shows the toned look that “ready to view” saves.':'Preview shows the inverted negative.'); }
 // preview rendering: auto levels per channel, inversion for negatives, orientation as the TIFF tag says
 async function makePreview(planes,g,s){
   const c=document.createElement('canvas'); c.width=g.pixels; c.height=g.lines;
   const ctx=c.getContext('2d'), im=ctx.createImageData(g.pixels,g.lines);
-  im.data.set(CaptureRuntime.renderPreview(planes,g,s.film)); ctx.putImageData(im,0,0);
+  const px=CaptureRuntime.renderPreview(planes,g,s.film==='display'?'display':previewFilm(s),previewOpts(s));
+  im.data.set(px); ctx.putImageData(im,0,0);
   const rot={1:0,6:90,3:180,8:-90}[s.orientation]||0, swap=Math.abs(rot)===90;
   const o=document.createElement('canvas'); o.width=swap?c.height:c.width; o.height=swap?c.width:c.height;
   const x=o.getContext('2d'); x.translate(o.width/2,o.height/2); x.rotate(rot*Math.PI/180); x.drawImage(c,-c.width/2,-c.height/2);
   const t=document.createElement('canvas'), k=240/Math.max(o.width,o.height); t.width=Math.round(o.width*k); t.height=Math.round(o.height*k);
   const tx=t.getContext('2d'); tx.imageSmoothingQuality='high'; tx.drawImage(o,0,0,t.width,t.height);
-  return {large:o.toDataURL('image/jpeg',0.9),thumb:t.toDataURL('image/jpeg',0.75)};
+  const out={large:o.toDataURL('image/jpeg',0.9),thumb:t.toDataURL('image/jpeg',0.75)}; lastPv={planes,g,large:out.large}; return out;
 }
 const previewJpeg=async p=>p?.large?(await fetch(p.large)).blob():null;
 
@@ -1027,6 +1116,7 @@ function checkExtras(key,s){
   const me=s.multiExposure&&s.multiExposure!=='off', ir=s.infrared&&s.infrared!=='off';
   if(!me&&!ir) return {me,ir};
   const bad=m=>{ const e=new Error(m); e.name='ScanConfigurationError'; throw e; };
+  if(gl&&ir) bad('The OpticFilm 8100 has no infrared channel (the free trial software offers none either), so dust and scratch repair is not possible. Switch infrared off.');
   if(key!=='full') bad('Multi-exposure and infrared are available at 3600 dpi only (the recorded IR sequence and the merge are 3600 dpi). Switch them off or choose 3600 dpi.');
   if(s.tiff==='raw') bad('Multi-exposure and infrared need the aligned TIFF: choose “aligned RGB 16-bit” or “aligned + raw USB”.');
   return {me,ir};
@@ -1050,7 +1140,7 @@ function checkReady(){
 }
 async function scanAndSave(){
   fromUI(); checkReady();
-  CaptureRuntime.prepareProfile(CAPTURE_PROFILES[settings.profile],settings); checkExtras(settings.profile,settings);
+  if(!gl) CaptureRuntime.prepareProfile(CAPTURE_PROFILES[settings.profile],settings); checkExtras(settings.profile,settings);
   const number=rescan??settings.next, overwrite=rescan!==null, base=Roll.baseName(settings.prefix,number,settings.digits);
   say(`Scanning ${base}…`,'busy'); log('',`frame ${base}: scan started`);
   let r;
@@ -1090,7 +1180,7 @@ async function frameSaved(r,wasRescan){
 }
 async function checkFraming(){
   fromUI();
-  CaptureRuntime.prepareProfile(CAPTURE_PROFILES.prescan,settings);
+  if(!gl) CaptureRuntime.prepareProfile(CAPTURE_PROFILES.prescan,settings);
   say('Quick prescan for framing (not saved)…','busy');
   const {bytes,profile,lamp}=await acquire('prescan');
   const al=CaptureRuntime.measureShifts(bytes,profile), g=CaptureRuntime.geometry(profile,al.shifts);
@@ -1145,7 +1235,7 @@ $('pkNative').onclick=async()=>{
 };
 
 // ---------------------------------------------------------------- buttons, keys, guard
-function enableScan(){ ['pixelSampling','multiExposure','meFactor','infrared','dummyLines','pixels'].forEach(id=>$(id).disabled=operationActive||!!pending); const ok=(connected||dry)&&!pending&&!operationActive; $('bScan').disabled=(connected||dry)?!ok:operationActive; $('bPreview').disabled=!ok; ['bHome','bLamp','bReconnect','bMonitor'].forEach(i=>$(i).disabled=!connected||operationActive); $('bTrace').disabled=!(connected&&trace.length>traceMark); $('bStop').disabled=!connected; }
+function enableScan(){ ['pixelSampling','multiExposure','meFactor','infrared','dummyLines','pixels'].forEach(id=>$(id).disabled=operationActive||!!pending||(id==='infrared'&&!!gl)); const ok=(connected||dry)&&!pending&&!operationActive; $('bScan').disabled=(connected||dry)?!ok:operationActive; $('bPreview').disabled=!ok; ['bHome','bLamp','bReconnect','bMonitor'].forEach(i=>$(i).disabled=!connected||operationActive); $('bTrace').disabled=!(connected&&trace.length>traceMark); $('bStop').disabled=!connected; }
 function guard(fn){ return async()=>{ if(operationActive) return; operationActive=true; cancelFlag=false; enableScan(); $('bStop').disabled=!(connected||dry);
   try{ if(gpioPoll.busy) await gpioPoll.busy.catch(()=>{}); await fn(); }
   catch(e){ if(e instanceof Cancelled){ log('w','stopped'); say('Stopped. The carriage has been parked.'); try{ cancelFlag=false; await stopMotor(); await home(); }catch(_){} }
@@ -1158,7 +1248,7 @@ async function connectScanner(){
   if(dev){ connected=false; refreshName(); try{ await dev.close(); }catch(_){} dev=null; }
   say('Connecting…','busy');
   try{ await connect(); } finally { refreshName(); }
-  say(`Ready. Load the first frame and press Space to scan ${safeBase(settings.next)}.`,'ok');
+  say(gl?'Ready (OpticFilm 8100, experimental). Load a frame, then press Preview to check framing or Scan & Save to scan it.':`Ready. Load the first frame and press Space to scan ${safeBase(settings.next)}.`,'ok');
 }
 function leaveDryRun(){
   dry=false; try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); settings={...defaults,...(s?.settings||{})}; records=s?.records||[]; }catch(e){}
@@ -1172,7 +1262,7 @@ $('bReconnect').onclick=guard(connectScanner);
 $('bPreview').onclick=guard(checkFraming);
 $('bRetry').onclick=guard(retrySave);
 $('bDiscard').onclick=discardPending;
-$('bStop').onclick=()=>{ if(!operationActive&&!connected) return; if(!operationActive) return guard(async()=>{ await stopMotor(); await home(); say('Carriage parked.'); })(); cancelFlag=true; log('w',monitoring?'stopping the button monitor':'stop requested; parking after the current transfer'); };
+$('bStop').onclick=()=>{ if(!operationActive&&!connected) return; if(!operationActive) return guard(async()=>{ await stopMotor(); await home(); say('Carriage parked.'); })(); cancelFlag=true; log('w',monitoring?'stopping the button monitor':gl?'stop requested; the OpticFilm 8100 cannot abort a scan, so the current pass is read to its end and discarded, then the carriage parks':'stop requested; parking after the current transfer'); if(gl&&!monitoring) say('Stopping: the 8100 cannot abort a scan, so it finishes the current pass first (up to about 2 minutes at 7200 dpi), then parks.','busy'); };
 // Button monitor: watches the interrupt endpoint (through the event listener) and polls the GPIO
 // input registers, logging every event and change, so the front buttons can be identified.
 let monitoring=false;

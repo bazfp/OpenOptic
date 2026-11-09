@@ -542,6 +542,7 @@
     for(let v=0;v<hist.length;v++){count+=hist[v];if(!found&&count>a){lo=v;found=true;}if(count>b){hi=v;break;}}
     return lo+(hi-lo)*(rank-a);
   }
+  const TONE_SAT=65000;   // at or above this a sample counts as saturated (shared by the preview and the saved tone)
   function levels(planes,g){
     // Same 150-sample inset and 0.5/99.5 percentiles as the reconstructed PNG.
     const mx=g.pixels>300?150:0,my=g.lines>300?150:0;
@@ -564,14 +565,17 @@
   // and the densest area (0.1th percentile), then a display gamma. This removes the orange
   // mask and keeps dense highlights (bright subjects) tonal instead of clipping them, which a
   // linear inversion does. Slides/positives: linear levels with sRGB-like gamma.
-  function renderPreview(planes,g,film='neg'){
+  function renderPreview(planes,g,film='neg',{skipSaturated=false}={}){
     const N=g.pixels*g.lines, out=new Uint8ClampedArray(N*4), mx=Math.floor(g.pixels*0.02), my=Math.floor(g.lines*0.02);
     if(film==='display'){ for(let c=0;c<3;c++) for(let i=0;i<N;i++) out[i*4+c]=planes[c][i]>>8; for(let i=0;i<N;i++) out[i*4+3]=255; return out; }   // already a rendered positive
     const neg=film!=='pos', lut=new Uint8ClampedArray(4096);
     for(let i=0;i<4096;i++)lut[i]=Math.round(255*Math.pow(i/4095,neg?1/1.4:1/2.2));
     for(let c=0;c<3;c++){
       const h=new Uint32Array(65536);let n=0;
-      for(let y=my;y<g.lines-my;y++)for(let x=mx;x<g.pixels-mx;x++){h[planes[c][y*g.pixels+x]]++;n++;}
+      // skipSaturated (opt-in): saturated pixels (an open light path beside a trimmed frame) are left out of the levels, exactly as toneView does for the
+      // saved "ready to view" TIFF, so the preview shows what will be saved. Off by default: the 7600i previews are unchanged.
+      for(let y=my;y<g.lines-my;y++)for(let x=mx;x<g.pixels-mx;x++){const v=planes[c][y*g.pixels+x];if(!skipSaturated||v<TONE_SAT){h[v]++;n++;}}
+      if(!n)for(let y=my;y<g.lines-my;y++)for(let x=mx;x<g.pixels-mx;x++){h[planes[c][y*g.pixels+x]]++;n++;}
       const lo=Math.max(1,percentile(h,n,.001)), hi=Math.max(lo+1,percentile(h,n,.999)), pl=planes[c];
       if(neg){ const k=1/Math.log(hi/lo);
         for(let i=0;i<N;i++){const v=Math.min(hi,Math.max(lo,pl[i]));out[i*4+c]=lut[Math.round(4095*Math.log(hi/v)*k)];} }
@@ -582,6 +586,27 @@
     return out;
   }
 
+
+  // "Ready to view" output: the same film-aware curve as renderPreview, applied to the aligned 16-bit RGB data in place
+  // (interleaved, W x H) so the saved TIFF looks right in any viewer. Per-channel levels come from the 0.1 / 99.9
+  // percentiles of the pixels inside a 2 % margin, SKIPPING saturated pixels (an open light path next to a trimmed frame
+  // would otherwise set the white point and leave the picture dark). Positives: levels + gamma 2.2; negatives: density
+  // log10(base/T) + gamma 1.4. Returns what it used, for the sidecar. The curve is a 14-bit table: no visible banding.
+  function toneView(rgb,W,H,film){
+    const neg=film!=='pos', SAT=TONE_SAT, STEPS=16384, mx=Math.floor(W*0.02), my=Math.floor(H*0.02), lut=new Uint16Array(STEPS), levels=[];
+    for(let i=0;i<STEPS;i++) lut[i]=Math.round(65535*Math.pow(i/(STEPS-1),neg?1/1.4:1/2.2));
+    for(let c=0;c<3;c++){
+      const h=new Uint32Array(65536); let n=0;
+      for(let y=my;y<H-my;y++){ const o=(y*W+mx)*3+c; for(let x=0;x<W-2*mx;x++){ const v=rgb[o+x*3]; if(v<SAT){ h[v]++; n++; } } }
+      if(!n) for(let y=my;y<H-my;y++){ const o=(y*W+mx)*3+c; for(let x=0;x<W-2*mx;x++){ h[rgb[o+x*3]]++; n++; } }   // all saturated: nothing to skip
+      const lo=Math.max(1,percentile(h,n,.001)), hi=Math.max(lo+1,percentile(h,n,.999)); levels.push([Math.round(lo),Math.round(hi)]);
+      if(neg){ const k=(STEPS-1)/Math.log(hi/lo);
+        for(let i=c;i<rgb.length;i+=3){ const v=rgb[i]<lo?lo:rgb[i]>hi?hi:rgb[i]; rgb[i]=lut[Math.round(Math.log(hi/v)*k)]; } }
+      else { const k=(STEPS-1)/(hi-lo);
+        for(let i=c;i<rgb.length;i+=3){ const v=rgb[i]<lo?lo:rgb[i]>hi?hi:rgb[i]; rgb[i]=lut[Math.round((v-lo)*k)]; } }
+    }
+    return {film:neg?'neg':'pos',levels};
+  }
 
   // ------------------------------------------------------------ lamp check
   // Statistics of a white calibration read (central 80 % of the line, like the profile builder).
@@ -774,5 +799,5 @@
     return buf;
   }
 
-  globalThis.CaptureRuntime={Calibration,collapseRecordedWaits,noiseStats,noiseModel,CALIBRATED_SHIFTS,livePreview,prepareProfile,run,geometry,measureShifts,decode,levels,renderRGB,alignedFrame,previewPlanes,tiffHeader,renderPreview,whiteStats,lampVerdict,darkVerdict,LAMP_LIMITS};
+  globalThis.CaptureRuntime={Calibration,collapseRecordedWaits,noiseStats,noiseModel,CALIBRATED_SHIFTS,livePreview,prepareProfile,run,geometry,measureShifts,decode,levels,renderRGB,alignedFrame,previewPlanes,tiffHeader,renderPreview,toneView,whiteStats,lampVerdict,darkVerdict,LAMP_LIMITS};
 })();
