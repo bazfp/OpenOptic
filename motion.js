@@ -94,5 +94,92 @@
     }
     return {home,stop,waitIdle};
   }
-  globalThis.Motion={recorded,create};
+  // GL845 / OpticFilm 8100: the recorded vendor homing replayed as a whole. The vendor drives in reverse for
+  // far more steps than the travel and the chip itself stops at the home sensor (status 0x41 goes
+  // moving -> stopped with HOME). Only reverse motion is protected by that sensor, so a plan whose last
+  // move is not a reverse move is refused, and a timeout stops the motor with the recorded stop sequence.
+  //   plan = {ops:[control/write ops of the home move], stop:[ops of the recorded stop], maxMs}
+  function checkHomePlan(plan){
+    let reverse=null, started=false;
+    for(const o of plan.ops){
+      if(o.kind!=='control'||o.rt!==0x40||o.value!==0x83||o.data.length<2)continue;
+      for(let k=0;k<o.data.length;k+=2){
+        if(o.data[k]===0x02)reverse=!!(o.data[k+1]&MTRREV);
+        if(o.data[k]===0x0F&&o.data[k+1]===1){ if(!reverse)throw new Error('home plan refused: its move is not in reverse'); started=true; }
+      }
+    }
+    if(!started)throw new Error('home plan refused: it never starts a move');
+    if(!plan.stop?.length)throw new Error('home plan refused: no stop sequence');
+    return plan;
+  }
+  function createRecordedHome(io,plan,{log=()=>{},sleep,now,check=()=>{}}={}){
+    checkHomePlan(plan);
+    const maxMs=plan.maxMs??20000;   // measured on an 8100: homing from 12 000 to 30 000 steps out takes 2 to 6 s, so 20 s is generous
+    async function waitIdle(ms,what){
+      const t=now(); let s=await io.status();
+      while(s&MOTORENB){ check(); if(now()-t>ms)throw new Error(what+': motor still running after '+Math.round(ms/1000)+' s'); await sleep(10); s=await io.status(); }
+      return s;
+    }
+    async function stop(){ for(const o of plan.stop)await io.send(o); return waitIdle(5000,'stop'); }
+    async function home(){
+      const t0=now(); let s=await io.status();
+      if(s&MOTORENB){ log('carriage still moving: stopping it first'); s=await stop(); }
+      if(s&HOME){ log('carriage already at the home sensor'); return s; }
+      for(const o of plan.ops){ check(); await io.send(o); }
+      const t=now();
+      for(;;){
+        check(); s=await io.status();
+        if(!(s&MOTORENB))break;
+        if(now()-t>maxMs){ await stop(); throw new Error('home move did not finish in '+Math.round(maxMs/1000)+' s: the motor was stopped'); }
+        await sleep(10);
+      }
+      if(!(s&HOME))throw new Error('home sensor not found: the carriage stopped without reaching it');
+      log(`carriage parked at the home sensor (${((now()-t0)/1000).toFixed(1)} s)`);
+      return s;
+    }
+    return {home,stop,waitIdle};
+  }
+  // A recorded bounded positioning move (forward, or reverse when plan.reverse is set; reverse is also guarded by the
+  // home sensor). Forward travel has no home-sensor stop, so a plan is accepted only if
+  // it matches its declared direction, writes exactly plan.steps (a small, bounded count) and starts a move; the chip then ends it by
+  // itself. plan = {ops, steps, maxSteps, maxMs}; stopOps comes from the home plan.
+  function checkForwardPlan(plan){
+    let reverse=null, started=false; const r={};
+    for(const o of plan.ops){
+      if(o.kind!=='control'||o.rt!==0x40||o.value!==0x83||o.data.length<2)continue;
+      for(let k=0;k<o.data.length;k+=2){
+        r[o.data[k]]=o.data[k+1];
+        if(o.data[k]===0x0F&&o.data[k+1]===1){ reverse=!!((r[0x02]||0)&MTRREV); started=true; r.steps=((r[0x3D]||0)<<16)|((r[0x3E]||0)<<8)|(r[0x3F]||0); r.scan=(r[0x01]||0)&1; }
+      }
+    }
+    if(!started)throw new Error('forward plan refused: it never starts a move');
+    if(reverse&&!plan.reverse)throw new Error('forward plan refused: its move is in reverse');
+    if(!reverse&&plan.reverse)throw new Error('reverse plan refused: its move is forward');
+    if(r.scan)throw new Error('forward plan refused: it starts a scan, not a positioning move');
+    if(r.steps!==plan.steps)throw new Error(`forward plan refused: it writes ${r.steps} steps, not the recorded ${plan.steps}`);
+    if(plan.steps>(plan.maxSteps??16000))throw new Error(`forward plan refused: ${plan.steps} steps exceeds the cap of ${plan.maxSteps??16000}`);   // the farthest position known to be safe is about 30 200 steps from home; the recorded moves are 15 200
+    return plan;
+  }
+  async function runForward(io,plan,stopOps,{log=()=>{},sleep,now,check=()=>{}}={}){
+    checkForwardPlan(plan);
+    if(!stopOps?.length)throw new Error('forward move refused: no stop sequence');
+    const maxMs=plan.maxMs??8000;
+    let s=await io.status();
+    if(s&MOTORENB)throw new Error('forward move refused: the carriage is already moving');
+    for(const o of plan.ops){ check(); await io.send(o); }
+    const t=now(); let sawFinish=false;
+    for(;;){
+      check(); s=await io.status(); if(s&FEEDFSH)sawFinish=true;
+      if(!(s&MOTORENB))break;
+      if(now()-t>maxMs){
+        for(const o of stopOps)await io.send(o);
+        const u=now(); while((await io.status())&MOTORENB){ if(now()-u>5000)throw new Error('forward move did not finish and the stop did not halt the motor'); await sleep(10); }
+        throw new Error('forward move did not finish in '+Math.round(maxMs/1000)+' s: the stop sequence was sent');
+      }
+      await sleep(10);
+    }
+    log(`${plan.reverse?"reverse":"forward"} move of ${plan.steps} steps finished in ${((now()-t)/1000).toFixed(2)} s`);
+    return {status:s,sawFinish};
+  }
+  globalThis.Motion={recorded,create,checkHomePlan,createRecordedHome,checkForwardPlan,runForward};
 })();
