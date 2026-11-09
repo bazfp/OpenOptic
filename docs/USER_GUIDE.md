@@ -15,18 +15,19 @@ overview of the project, see the [README](../README.md).
 7. [Managing your roll](#managing-your-roll)
 8. [Inverting your negatives](#inverting-your-negatives)
 9. [All options](#all-options)
-10. [Troubleshooting](#troubleshooting)
+10. [OpticFilm 8100 (experimental)](#opticfilm-8100-experimental)
+11. [Troubleshooting](#troubleshooting)
 
 **Technical details**
 
-11. [Output files](#output-files)
-12. [Image processing](#image-processing)
-13. [Scan speed and dummy lines](#scan-speed-and-dummy-lines)
-14. [How multi-exposure works](#how-multi-exposure-works)
-15. [How dust and scratch repair works](#how-dust-and-scratch-repair-works)
-16. [Scanner events and the positioning stop](#scanner-events-and-the-positioning-stop)
-17. [How it works](#how-it-works)
-18. [Building and testing](#building-and-testing)
+12. [Output files](#output-files)
+13. [Image processing](#image-processing)
+14. [Scan speed and dummy lines](#scan-speed-and-dummy-lines)
+15. [How multi-exposure works](#how-multi-exposure-works)
+16. [How dust and scratch repair works](#how-dust-and-scratch-repair-works)
+17. [Scanner events and the positioning stop](#scanner-events-and-the-positioning-stop)
+18. [How it works](#how-it-works)
+19. [Building and testing](#building-and-testing)
 
 > OpenOptic supports the first hardware version of the Plustek OpticFilm 7600i (USB `07b3:0c3b`,
 > bcdDevice 4.00, Genesys GL843). It is a hobby project, not affiliated with or endorsed by
@@ -244,6 +245,51 @@ your browser and locked while a scan runs.
 | `-port 47600` | The local port. Keep the default: the browser stores settings and previews per address. |
 | `-install-udev` | Linux: let your user open the scanner without sudo, then exit. |
 | `-version` | Print the version and exit. |
+
+## OpticFilm 8100 (experimental)
+
+The Plustek OpticFilm 8100 (USB `07b3:130c`, bcdDevice 6.05, Genesys GL845) works, but with less than the
+7600i: it is built from USB captures of the free trial software rather than from a calibrated driver.
+
+**What works**
+
+| Resolution | Image | Size | Time |
+|---|---|---|---|
+| 900 dpi (Preview) | 1300 × 944 | 7 MB | about 8 s |
+| 1800 dpi | 2592 × 1889 | 29 MB | about 25 s |
+| 3600 dpi | 5200 × 3776 | 118 MB | about 85 s |
+| 7200 dpi | 10400 × 7552 | 471 MB | about 2 min (needs about 1.4 GB of free memory) |
+
+All of them scan the whole frame; the times include moving the carriage and homing.
+
+**What is different from the 7600i**
+
+- **Exposure and gain are the recorded the free trial software values.** The chip applies no shading, so OpenOptic applies a
+  software flat-field instead, built from a recorded white reference. It evens out the lamp's falloff towards
+  the edges and the differences between sensor pixels. Dark slides stay dark: use **Tone: ready to view**.
+- **Tone** (Output options): *linear* saves the scanner's raw 16-bit data for a negative converter; *ready to
+  view* saves the same curve the preview shows, still 16-bit. On the 8100 (only) the slide preview follows the setting. The
+  optional **Brightness** and **Contrast** controls (a slider and a number box each, no limit on the typed
+  value up to ±1000) act on *ready to view* only.
+- **Previews chain.** After a preview the head steps back to the frame start instead of homing, so the next
+  preview takes about 7 s. After 4 previews, 20 s of idle time, or a scan, it homes again.
+- **Stop mid-scan takes a moment.** The chip cannot abort a scan, so Stop reads and discards the rest of the
+  pass, then parks the carriage (up to about 4 s for a preview, 65 s at 3600 dpi, 105 s at 7200 dpi).
+- **Exposure is chosen per film, as the free trial software does.** Negatives use the longest recorded exposure; slides use one
+  that is 25 % shorter, so highlights are not clipped. (A slide scanned with the negative exposure comes out
+  bright and clipped.)
+- **Multi-exposure works at 3600 dpi** (both *extended range* and *exposure fusion*): a short pass and a long
+  pass, 1.33× the exposure, are merged with a noise model measured on this sensor. On a real slide it improved
+  signal-to-noise in dark areas by about 25 to 45 %. The 7600i's 2×, 3×, 4× choices do not exist here: only the
+  one recorded long pass does. Allow about 3 minutes.
+- **No infrared:** the 8100 has no infrared channel (the free trial software does not offer one either), so dust and
+  scratch repair is not possible. The option is disabled.
+- **Not available yet:** live calibration (the recorded white reference is used), the front buttons, and dry run.
+
+**Tools.** `tools/usbspy` records a program's USB traffic on macOS (used with the free trial software to build these plans),
+`tools/build_capture_profiles.py --home-plan` turns such captures into `home_plans.js`,
+`tools/build_shading_8100.py` builds the white reference, and `tools/hwtest_8100.cjs` runs one step at a
+time against a real scanner (dry run unless given `--go`; keep a hand near the power switch).
 
 ## Troubleshooting
 
